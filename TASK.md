@@ -244,14 +244,14 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
   - Probe HTTP untuk setiap subdomain ditemukan
   - Return list `Asset` dengan type `Subdomain` dan `URL`
 - [x] 🟡 Log ringkasan: "Found X subdomains, Y are live"
-- [ ] 🟢 Integration test: discovery terhadap domain test (gunakan local DNS mock) ← Sprint berikutnya
+- [x] 🟢 Integration test: discovery terhadap domain test (`crates/discovery/tests/integration_test.rs` — 2 tests, ActiveBruteforce + SmartHeuristic) ← selesai di Sprint 3
 
-### 🏁 Sprint 2 — Definition of Done
-- `cargo test -p discovery` pass
-- Bisa resolve subdomain dari wordlist
-- Wildcard detection berfungsi
-- HTTP probing mengembalikan status code dan title
-- `run_discovery()` mengembalikan list `Asset` yang valid
+### 🏁 Sprint 2 — Definition of Done ✅
+- `cargo test -p discovery` pass ✅
+- Bisa resolve subdomain dari wordlist ✅
+- Wildcard detection berfungsi ✅
+- HTTP probing mengembalikan status code dan title ✅
+- `run_discovery()` mengembalikan list `Asset` yang valid ✅
 
 ---
 
