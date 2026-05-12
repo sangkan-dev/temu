@@ -1,0 +1,21 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "temu"
+path = "src/main.rs"
+
+[dependencies]
+temu_core = { path = "../core" }
+discovery = { path = "../discovery" }
+fingerprint = { path = "../fingerprint" }
+fuzzing = { path = "../fuzzing" }
+vulnerability = { path = "../vulnerability" }
+cve_client = { path = "../cve_client" }
+verifier = { path = "../verifier" }
+reporter = { path = "../reporter" }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
