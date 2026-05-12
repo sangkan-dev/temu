@@ -371,8 +371,8 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
 **Goal:** Semua modul terhubung lewat CLI. User bisa jalankan `temu scan --url <target>` dan dapat output JSON.
 
 ### 4.1 CLI — Argument Parsing
-- [ ] 🔴 Setup `clap` dengan derive API di cli crate
-- [ ] 🔴 Implementasi command structure:
+- [x] 🔴 Setup `clap` dengan derive API di cli crate
+- [x] 🔴 Implementasi command structure:
   ```
   temu scan single --url <URL> [--rate <N>] [--timeout <N>] [--output <DIR>]
   temu scan file --list <FILE>     (placeholder, belum implementasi)
@@ -380,17 +380,17 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
   temu report generate --format <json|html|pdf> --input <FILE>
   temu cve update                  (placeholder, belum implementasi)
   ```
-- [ ] 🔴 Parsing argumen ke `AppConfig` (merge dengan default.toml):
+- [x] 🔴 Parsing argumen ke `AppConfig` (merge dengan default.toml):
   - CLI args override config file
   - Validasi: URL harus valid, rate > 0, timeout > 0
-- [ ] 🟡 Help text yang informatif untuk setiap subcommand
-- [ ] 🟢 Tambahkan `--verbose` flag untuk debug logging
+- [x] 🟡 Help text yang informatif untuk setiap subcommand
+- [x] 🟢 Tambahkan `--verbose` flag untuk debug logging
 
 ### 4.2 CLI — Scan Orchestrator
-- [ ] 🔴 Implementasi `async fn run_scan(target: Target, config: AppConfig) -> ScanResult`:
+- [x] 🔴 Implementasi `async fn run_scan(url, config, mode) -> anyhow::Result<ScanResult>`:
   ```rust
   pub struct ScanResult {
-      pub target: Target,
+      pub target: String,
       pub assets: Vec<Asset>,
       pub tech_stacks: HashMap<String, Vec<TechStack>>,  // url -> techs
       pub vulnerabilities: Vec<Vulnerability>,
@@ -400,14 +400,13 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
   }
 
   pub struct ScanStats {
-      pub total_requests: u64,
       pub subdomains_found: u32,
       pub paths_found: u32,
       pub vulns_found: u32,
       pub duration_secs: f64,
   }
   ```
-- [ ] 🔴 Implementasi alur pipeline MVP:
+- [x] 🔴 Implementasi alur pipeline MVP:
   ```
   1. Parse target URL → Target struct
   2. Discovery: bruteforce subdomain + HTTP probe
@@ -416,60 +415,69 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
   5. Vulnerability: scan setiap path + parameter yang ditemukan
   6. Kumpulkan hasil → ScanResult
   ```
-- [ ] 🟡 Progress output ke terminal:
+- [x] 🟡 Progress output ke terminal (stderr):
   ```
   [*] Starting scan for staging.company.com
-  [+] Discovery: found 12 subdomains, 8 are live
+  [+] Discovery: found 12 assets
   [+] Fingerprint: nginx/1.18.0, PHP/7.4
   [+] Fuzzing: found 23 paths
-  [+] Vulnerability: found 3 issues (1 Critical, 2 Medium)
+  [+] Vulnerability: found 3 issues
   [*] Scan completed in 45.2s
   ```
-- [ ] 🟢 Graceful shutdown: handle Ctrl+C dengan `tokio::signal`
+- [x] 🟢 Graceful shutdown: handle Ctrl+C dengan `tokio::signal`
+- [x] 🟢 `cli/src/lib.rs` mengekspos `orchestrator` untuk integration test
 
 ### 4.3 Reporter — JSON Output
-- [ ] 🔴 Fungsi `generate_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf>`:
+- [x] 🔴 Fungsi `generate_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, TemuError>`:
   - Serialize `ScanResult` ke JSON pretty-printed
   - Nama file: `{date}_{domain}.json` (contoh: `2025-05-12_staging_company.json`)
   - Simpan ke `output_dir`
-- [ ] 🔴 JSON schema yang jelas:
+- [x] 🔴 JSON schema yang jelas:
   ```json
   {
-    "scan_info": {
-      "target": "staging.company.com",
-      "started_at": "2025-05-12T10:00:00Z",
-      "finished_at": "2025-05-12T10:00:45Z",
+    "target": "https://staging.company.com",
+    "scan_started_at": "2025-05-12T10:00:00Z",
+    "scan_finished_at": "2025-05-12T10:00:45Z",
+    "stats": {
+      "subdomains_found": 5,
+      "paths_found": 12,
+      "vulns_found": 2,
       "duration_secs": 45.2
     },
-    "stats": { ... },
     "assets": [ ... ],
     "tech_stacks": { ... },
     "vulnerabilities": [ ... ]
   }
   ```
-- [ ] 🟡 Buat folder `results/` otomatis jika belum ada
-- [ ] 🟢 Unit test: generate JSON, parse kembali, validasi isi
+- [x] 🟡 Buat folder `results/` otomatis jika belum ada
+- [x] 🟢 Unit test: generate JSON, parse kembali, validasi isi (4 tests)
 
 ### 4.4 Integration Test End-to-End
-- [ ] 🔴 Buat test binary yang menjalankan scan terhadap mock server:
-  - Setup mock HTTP server (gunakan `wiremock` atau `axum` test server)
+- [x] 🔴 Buat test binary yang menjalankan scan terhadap mock server:
+  - Setup mock HTTP server menggunakan `wiremock`
+  - nginx header + WordPress body di `/`, `/robots.txt` 200, `/.env` 200, lainnya 404
   - Jalankan full pipeline: discovery → fingerprint → fuzz → vuln scan
-  - Assert: minimal 1 asset ditemukan, fingerprint terdeteksi
-- [ ] 🟡 Test CLI argument parsing: semua kombinasi valid/invalid
-- [ ] 🟢 Dokumentasi cara menjalankan: `cargo run -p cli -- scan single --url <URL>`
+  - Assert: nginx fingerprint terdeteksi, `/robots.txt` ditemukan fuzz, JSON valid, file ditulis
+- [x] 🟡 Test CLI argument parsing: semua kombinasi valid/invalid (11 tests di `args.rs`)
+- [x] 🟢 Dokumentasi cara menjalankan: `cargo run -p cli -- scan single --url <URL>`
 
 ### 4.5 Dokumentasi MVP
-- [ ] 🟡 Update `README.md` dengan:
+- [x] 🟡 Update `README.md` dengan:
   - Cara build: `cargo build --release`
   - Cara pakai: contoh command
   - Struktur folder
-- [ ] 🟢 Tambahkan `CHANGELOG.md` entry untuk v0.1.0-alpha
+- [x] 🟢 Tambahkan `CHANGELOG.md` entry untuk v0.1.0-alpha
+- [x] 🟡 Bug fix: env var race condition di `temu_core` config tests — pakai `static ENV_MUTEX`
 
-### 🏁 Sprint 4 — Definition of Done
-- `cargo run -p cli -- scan single --url <URL>` berjalan end-to-end
-- Output JSON valid dan berisi hasil scan
-- Seluruh pipeline: discovery → fingerprint → fuzzing → vulnerability → report berjalan
-- Integration test pass
+### 🏁 Sprint 4 — Definition of Done ✅
+- `cargo run -p cli -- scan single --url <URL>` berjalan end-to-end ✅
+- Output JSON valid dan berisi hasil scan ✅
+- Seluruh pipeline: discovery → fingerprint → fuzzing → vulnerability → report berjalan ✅
+- `cargo test -p cli --test integration_e2e` — 2 passed ✅
+- `cargo test -p cli` — 11 args unit tests + 2 integration tests ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo build --release` — sukses ✅
+- Graceful shutdown Ctrl+C (`tokio::select!` + `ctrl_c()`) ✅
 - **MVP tercapai ✅**
 
 ---

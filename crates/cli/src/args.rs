@@ -1,0 +1,262 @@
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "temu",
+    version = "0.1.0",
+    author = "Temu Security",
+    about = "Automated cybersecurity scanner"
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+
+    /// Enable verbose (debug) logging
+    #[arg(long, global = true)]
+    pub verbose: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Run a vulnerability scan
+    Scan {
+        #[command(subcommand)]
+        mode: ScanCommand,
+    },
+    /// Generate a report from a previous scan result
+    Report {
+        #[command(subcommand)]
+        mode: ReportCommand,
+    },
+    /// Update CVE database cache
+    Cve {
+        #[command(subcommand)]
+        mode: CveCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ScanCommand {
+    /// Scan a single URL
+    Single {
+        /// Target URL (e.g. https://example.com)
+        #[arg(long)]
+        url: String,
+
+        /// Discovery mode
+        #[arg(long, default_value = "hybrid")]
+        mode: DiscoveryModeArg,
+
+        /// Max requests per second
+        #[arg(long)]
+        rate: Option<u32>,
+
+        /// Request timeout in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+
+        /// Output directory for reports
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+
+        /// Path to config file
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+    },
+    /// Scan a list of targets from a file (not yet implemented)
+    File {
+        /// Path to file containing target URLs (one per line)
+        #[arg(long)]
+        list: std::path::PathBuf,
+    },
+    /// Scan an entire network CIDR (not yet implemented)
+    Network {
+        /// Network CIDR (e.g. 192.168.1.0/24)
+        #[arg(long)]
+        cidr: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ReportCommand {
+    /// Generate a report from a scan result file
+    Generate {
+        /// Output format
+        #[arg(long, default_value = "json")]
+        format: ReportFormat,
+
+        /// Path to input scan result JSON
+        #[arg(long)]
+        input: std::path::PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CveCommand {
+    /// Update CVE database (not yet implemented)
+    Update,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum DiscoveryModeArg {
+    Bruteforce,
+    Heuristic,
+    Passive,
+    Hybrid,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum ReportFormat {
+    Json,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_scan_single_minimal() {
+        let cli = Cli::try_parse_from(["temu", "scan", "single", "--url", "https://example.com"])
+            .expect("minimal scan single must parse");
+        match cli.command {
+            Command::Scan { mode: ScanCommand::Single { url, rate, timeout, output, .. } } => {
+                assert_eq!(url, "https://example.com");
+                assert!(rate.is_none());
+                assert!(timeout.is_none());
+                assert!(output.is_none());
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_scan_single_all_options() {
+        let cli = Cli::try_parse_from([
+            "temu", "scan", "single",
+            "--url", "https://target.com",
+            "--mode", "passive",
+            "--rate", "30",
+            "--timeout", "15",
+            "--output", "/tmp/results",
+            "--verbose",
+        ])
+        .expect("full options must parse");
+
+        assert!(cli.verbose);
+        match cli.command {
+            Command::Scan {
+                mode: ScanCommand::Single { url, mode, rate, timeout, output, .. },
+            } => {
+                assert_eq!(url, "https://target.com");
+                assert!(matches!(mode, DiscoveryModeArg::Passive));
+                assert_eq!(rate, Some(30));
+                assert_eq!(timeout, Some(15));
+                assert_eq!(output, Some(std::path::PathBuf::from("/tmp/results")));
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_default_discovery_mode_is_hybrid() {
+        let cli = Cli::try_parse_from(["temu", "scan", "single", "--url", "https://example.com"])
+            .unwrap();
+        match cli.command {
+            Command::Scan { mode: ScanCommand::Single { mode, .. } } => {
+                assert!(matches!(mode, DiscoveryModeArg::Hybrid));
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_all_discovery_modes_parse() {
+        for (arg, expected) in [
+            ("bruteforce", "bruteforce"),
+            ("heuristic", "heuristic"),
+            ("passive", "passive"),
+            ("hybrid", "hybrid"),
+        ] {
+            let cli = Cli::try_parse_from([
+                "temu", "scan", "single", "--url", "https://x.com", "--mode", arg,
+            ])
+            .unwrap_or_else(|e| panic!("mode '{arg}' failed: {e}"));
+            match cli.command {
+                Command::Scan { mode: ScanCommand::Single { mode, .. } } => {
+                    assert_eq!(format!("{mode:?}").to_lowercase(), expected);
+                }
+                _ => panic!("expected Scan::Single"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_scan_single_missing_url_fails() {
+        let result = Cli::try_parse_from(["temu", "scan", "single"]);
+        assert!(result.is_err(), "missing --url must fail");
+    }
+
+    #[test]
+    fn test_invalid_mode_fails() {
+        let result =
+            Cli::try_parse_from(["temu", "scan", "single", "--url", "https://x.com", "--mode", "invalid"]);
+        assert!(result.is_err(), "invalid mode must fail");
+    }
+
+    #[test]
+    fn test_scan_file_parses() {
+        let cli = Cli::try_parse_from(["temu", "scan", "file", "--list", "/tmp/targets.txt"])
+            .expect("scan file must parse");
+        match cli.command {
+            Command::Scan { mode: ScanCommand::File { list } } => {
+                assert_eq!(list, std::path::PathBuf::from("/tmp/targets.txt"));
+            }
+            _ => panic!("expected Scan::File"),
+        }
+    }
+
+    #[test]
+    fn test_scan_network_parses() {
+        let cli = Cli::try_parse_from(["temu", "scan", "network", "--cidr", "10.0.0.0/24"])
+            .expect("scan network must parse");
+        match cli.command {
+            Command::Scan { mode: ScanCommand::Network { cidr } } => {
+                assert_eq!(cidr, "10.0.0.0/24");
+            }
+            _ => panic!("expected Scan::Network"),
+        }
+    }
+
+    #[test]
+    fn test_report_generate_parses() {
+        let cli = Cli::try_parse_from([
+            "temu", "report", "generate", "--input", "/tmp/result.json",
+        ])
+        .expect("report generate must parse");
+        match cli.command {
+            Command::Report { mode: ReportCommand::Generate { format, input } } => {
+                assert!(matches!(format, ReportFormat::Json));
+                assert_eq!(input, std::path::PathBuf::from("/tmp/result.json"));
+            }
+            _ => panic!("expected Report::Generate"),
+        }
+    }
+
+    #[test]
+    fn test_cve_update_parses() {
+        let cli = Cli::try_parse_from(["temu", "cve", "update"]).expect("cve update must parse");
+        assert!(matches!(
+            cli.command,
+            Command::Cve { mode: CveCommand::Update }
+        ));
+    }
+
+    #[test]
+    fn test_verbose_is_global_flag() {
+        let cli =
+            Cli::try_parse_from(["temu", "--verbose", "scan", "single", "--url", "https://x.com"])
+                .expect("--verbose before subcommand must work");
+        assert!(cli.verbose);
+    }
+}

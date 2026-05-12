@@ -110,6 +110,9 @@ impl AppConfig {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_values() {
@@ -160,7 +163,7 @@ dictionaries_dir = "/tmp/dicts"
 
     #[test]
     fn test_apply_env_overrides_rate_limit() {
-        // Safety: single-threaded test process; env mutation isolated here.
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::set_var("TEMU_RATE_LIMIT", "999") };
         let mut config = AppConfig::default();
         config.apply_env_overrides();
@@ -170,6 +173,7 @@ dictionaries_dir = "/tmp/dicts"
 
     #[test]
     fn test_apply_env_overrides_user_agent() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::set_var("TEMU_USER_AGENT", "TestAgent/1.0") };
         let mut config = AppConfig::default();
         config.apply_env_overrides();
@@ -179,6 +183,7 @@ dictionaries_dir = "/tmp/dicts"
 
     #[test]
     fn test_apply_env_overrides_invalid_value_ignored() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::set_var("TEMU_RATE_LIMIT", "not_a_number") };
         let mut config = AppConfig::default();
         config.apply_env_overrides();
@@ -188,6 +193,7 @@ dictionaries_dir = "/tmp/dicts"
 
     #[test]
     fn test_apply_env_overrides_output_dir() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         unsafe { std::env::set_var("TEMU_OUTPUT_DIR", "/tmp/temu_results") };
         let mut config = AppConfig::default();
         config.apply_env_overrides();
