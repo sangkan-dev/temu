@@ -54,6 +54,56 @@ impl AppConfig {
     pub fn load_or_default(path: &Path) -> Self {
         Self::load(path).unwrap_or_default()
     }
+
+    /// Applies `TEMU_*` environment variable overrides to this config in-place.
+    ///
+    /// Each field has a corresponding env var with the `TEMU_` prefix:
+    /// `TEMU_RATE_LIMIT`, `TEMU_TIMEOUT_SECS`, `TEMU_CONCURRENCY`,
+    /// `TEMU_USER_AGENT`, `TEMU_OUTPUT_DIR`, `TEMU_RULES_DIR`, `TEMU_DICTIONARIES_DIR`.
+    /// Invalid values are silently ignored.
+    pub fn apply_env_overrides(&mut self) {
+        if let Ok(v) = std::env::var("TEMU_RATE_LIMIT") {
+            if let Ok(n) = v.parse() {
+                self.rate_limit = n;
+            }
+        }
+        if let Ok(v) = std::env::var("TEMU_TIMEOUT_SECS") {
+            if let Ok(n) = v.parse() {
+                self.timeout_secs = n;
+            }
+        }
+        if let Ok(v) = std::env::var("TEMU_CONCURRENCY") {
+            if let Ok(n) = v.parse() {
+                self.concurrency = n;
+            }
+        }
+        if let Ok(v) = std::env::var("TEMU_USER_AGENT") {
+            self.user_agent = v;
+        }
+        if let Ok(v) = std::env::var("TEMU_OUTPUT_DIR") {
+            self.output_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("TEMU_RULES_DIR") {
+            self.rules_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("TEMU_DICTIONARIES_DIR") {
+            self.dictionaries_dir = PathBuf::from(v);
+        }
+    }
+
+    /// Loads configuration from `path` and applies `TEMU_*` env var overrides.
+    pub fn load_with_env(path: &Path) -> Result<Self, TemuError> {
+        let mut config = Self::load(path)?;
+        config.apply_env_overrides();
+        Ok(config)
+    }
+
+    /// Loads configuration from `path` (or default) and applies `TEMU_*` env var overrides.
+    pub fn load_or_default_with_env(path: &Path) -> Self {
+        let mut config = Self::load_or_default(path);
+        config.apply_env_overrides();
+        config
+    }
 }
 
 #[cfg(test)]
@@ -106,5 +156,42 @@ dictionaries_dir = "/tmp/dicts"
         tmp.write_all(b"this is not valid toml :::").unwrap();
         let result = AppConfig::load(tmp.path());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_env_overrides_rate_limit() {
+        // Safety: single-threaded test process; env mutation isolated here.
+        unsafe { std::env::set_var("TEMU_RATE_LIMIT", "999") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_RATE_LIMIT") };
+        assert_eq!(config.rate_limit, 999);
+    }
+
+    #[test]
+    fn test_apply_env_overrides_user_agent() {
+        unsafe { std::env::set_var("TEMU_USER_AGENT", "TestAgent/1.0") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_USER_AGENT") };
+        assert_eq!(config.user_agent, "TestAgent/1.0");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_invalid_value_ignored() {
+        unsafe { std::env::set_var("TEMU_RATE_LIMIT", "not_a_number") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_RATE_LIMIT") };
+        assert_eq!(config.rate_limit, 50);
+    }
+
+    #[test]
+    fn test_apply_env_overrides_output_dir() {
+        unsafe { std::env::set_var("TEMU_OUTPUT_DIR", "/tmp/temu_results") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_OUTPUT_DIR") };
+        assert_eq!(config.output_dir, PathBuf::from("/tmp/temu_results"));
     }
 }

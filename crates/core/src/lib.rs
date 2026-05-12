@@ -4,8 +4,10 @@
 pub mod config;
 pub mod error;
 pub mod logging;
+pub mod macros;
 pub mod types;
 
 pub use config::AppConfig;
 pub use error::TemuError;
+pub use logging::{init_logging, init_logging_with_file};
 pub use types::{Asset, AssetType, Scope, Severity, Target, Vulnerability};

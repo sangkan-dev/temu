@@ -156,14 +156,14 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
   rules_dir = "./rules"
   dictionaries_dir = "./dictionaries"
   ```
-- [ ] 🟡 Support override config via environment variables (prefix `TEMU_`) ← Sprint 2
+- [x] 🟡 Support override config via environment variables (prefix `TEMU_`) ← selesai di Sprint 2+
 - [x] 🟢 Unit test: load config default, override partial config
 
 ### 1.4 Core Crate — Logging
 - [x] 🔴 Setup `tracing` + `tracing-subscriber` untuk structured logging
 - [x] 🔴 Support log level dari config/CLI (trace, debug, info, warn, error)
-- [ ] 🟡 Output log ke file di samping stdout ← Sprint 2
-- [ ] 🟢 Macro helper: `temu_info!`, `temu_warn!`, `temu_error!` ← Nice to have
+- [x] 🟡 Output log ke file di samping stdout ← selesai di Sprint 2+
+- [x] 🟢 Macro helper: `temu_info!`, `temu_warn!`, `temu_error!` ← selesai di Sprint 2+
 
 ### 1.5 Core Crate — Error Handling
 - [x] 🔴 Definisikan `TemuError` enum menggunakan `thiserror`:
@@ -252,6 +252,48 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
 - Wildcard detection berfungsi
 - HTTP probing mengembalikan status code dan title
 - `run_discovery()` mengembalikan list `Asset` yang valid
+
+---
+
+## Sprint 2+ Enhancement — Hutang Sprint 1 + Discovery Hybrid
+
+**Goal:** Melunasi hutang Sprint 1 di temu_core dan upgrade discovery ke arsitektur hybrid.
+
+### A.1 Core — Env Var Override
+- [x] 🟡 `apply_env_overrides()` — override semua field AppConfig via `TEMU_*` env vars
+- [x] 🟡 `load_with_env()` dan `load_or_default_with_env()` sebagai convenience methods
+- [x] 🟢 Unit test: TEMU_RATE_LIMIT, TEMU_USER_AGENT, TEMU_OUTPUT_DIR, invalid value ignored
+
+### A.2 Core — Log ke File
+- [x] 🟡 Tambah dependency `tracing-appender` ke workspace
+- [x] 🟡 `init_logging_with_file(level, log_dir)` — stdout + rolling daily file `temu.log`
+- [x] 🟢 Unit test: no panic saat dipanggil dengan/tanpa log_dir
+
+### A.3 Core — Macro Helper
+- [x] 🟢 `temu_info!`, `temu_warn!`, `temu_error!` macro di `crates/core/src/macros.rs`
+- [x] 🟢 Re-export dari `temu_core` root
+
+### B.1 Discovery — DiscoveryMode Enum
+- [x] 🔴 `DiscoveryMode { PassiveOnly, ActiveBruteforce, SmartHeuristic, Hybrid }`
+- [x] 🔴 `run_discovery(target, config, mode)` — parameter mode wajib
+
+### B.2 Discovery — Passive CT Logs
+- [x] 🔴 `passive.rs` — `fetch_crtsh(domain)` via `https://crt.sh/?q=%.domain&output=json`
+- [x] 🟡 `fetch_crtsh_with_base(domain, base_url)` untuk testability
+- [x] 🟡 Wildcard strip (`*.example.com` → `example.com`), dedup, filter by domain
+- [x] 🟢 wiremock tests: parse subdomains, dedup, HTTP error, invalid JSON
+
+### B.3 Discovery — Heuristic Generator
+- [x] 🔴 `heuristic.rs` — `generate_candidates(domain)` cross-kombinasi service/env/region/numeric tags
+- [x] 🟢 Unit test: >= 200 kandidat, no duplicates, common patterns, all end with domain
+
+### 🏁 Sprint 2+ — Definition of Done
+- `cargo test -p temu_core` — 26 passed ✅
+- `cargo test -p discovery` — 27 passed ✅
+- `TEMU_RATE_LIMIT=999` → config.rate_limit berubah
+- `init_logging_with_file` menulis file temu.log
+- `generate_candidates("example.com")` menghasilkan > 200 kandidat
+- `run_discovery(target, config, DiscoveryMode::Hybrid)` terkompilasi
 
 ---
 
