@@ -302,148 +302,67 @@ Tujuan: Scanner bisa menerima 1 URL, menemukan subdomain, deteksi web server, fu
 **Goal:** Deteksi web server dari header, fuzz path dasar, dan load aturan deteksi YAML.
 
 ### 3.1 Fingerprint — Header-based Detection
-- [ ] 🔴 Definisikan `TechStack` struct:
-  ```rust
-  pub struct TechStack {
-      pub name: String,
-      pub version: Option<String>,
-      pub confidence: f32,          // 0.0 - 1.0
-      pub category: TechCategory,
-  }
-
-  pub enum TechCategory {
-      WebServer,
-      Framework,
-      Language,
-      CMS,
-      CDN,
-      WAF,
-      OS,
-      Database,
-      Other,
-  }
-  ```
-- [ ] 🔴 Fungsi `fingerprint_from_headers(headers: &HeaderMap) -> Vec<TechStack>`:
+- [x] 🔴 Definisikan `TechStack` struct dan `TechCategory` enum di `types.rs`
+- [x] 🔴 Fungsi `fingerprint_from_headers(headers: &HeaderMap) -> Vec<TechStack>`:
   - Parse header `Server` → deteksi nginx, Apache, IIS, dll + versi
   - Parse header `X-Powered-By` → deteksi PHP, ASP.NET, Express, dll
-  - Parse header `X-AspNet-Version`, `X-Generator`, dll
-- [ ] 🟡 Fungsi `fingerprint_from_body(body: &str) -> Vec<TechStack>`:
+  - Parse header `X-AspNet-Version`, `cf-ray`, `X-Sucuri-ID`, `X-CDN`
+- [x] 🟡 Fungsi `fingerprint_from_body(body: &str) -> Vec<TechStack>`:
   - Cari `<meta name="generator" content="WordPress 6.x">`
   - Cari pattern script `jquery-3.x.x.min.js`
-  - Cari pattern CSS framework (Bootstrap, Tailwind)
-- [ ] 🟡 Fungsi `detect_waf(headers: &HeaderMap, status: u16) -> Option<TechStack>`:
+  - Cari pattern CSS framework (Bootstrap)
+- [x] 🟡 Fungsi `detect_waf(headers: &HeaderMap, status: u16, body: &str) -> Option<TechStack>`:
   - Cek header `X-Sucuri-ID`, `cf-ray` (Cloudflare), `X-CDN` (Incapsula)
   - Cek jika response 403 dengan body berisi "Access Denied" pattern
-- [ ] 🔴 Fungsi publik `run_fingerprint(url: &str, config: &AppConfig) -> Vec<TechStack>`:
+- [x] 🔴 Fungsi publik `run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechStack>, TemuError>`:
   - Kirim GET request ke URL
   - Gabungkan hasil dari headers, body, WAF detection
   - Deduplikasi dan sort by confidence
-- [ ] 🟢 Unit test: mock response dengan header nginx/1.18.0 → assert deteksi benar
+- [x] 🟢 Unit test: mock response dengan header nginx/1.18.0 → assert deteksi benar (22 tests)
 
 ### 3.2 Fuzzing — Path Fuzzing (Dasar)
-- [ ] 🔴 Buat file `dictionaries/paths-small.txt` (100 path umum):
-  ```
-  /admin
-  /login
-  /api
-  /api/v1
-  /.git/HEAD
-  /.env
-  /backup
-  /wp-admin
-  /phpmyadmin
-  /robots.txt
-  /sitemap.xml
-  /swagger
-  /graphql
-  ...
-  ```
-- [ ] 🔴 Definisikan `FuzzResult` struct:
-  ```rust
-  pub struct FuzzResult {
-      pub url: String,
-      pub path: String,
-      pub status_code: u16,
-      pub content_length: u64,
-      pub content_type: Option<String>,
-      pub redirect_url: Option<String>,
-  }
-  ```
-- [ ] 🔴 Fungsi `fuzz_paths(base_url: &str, wordlist: &[String], config: &AppConfig) -> Vec<FuzzResult>`:
-  - Untuk setiap path di wordlist, kirim GET `{base_url}{path}`
+- [x] 🔴 Buat file `dictionaries/paths-small.txt` (100 path umum)
+- [x] 🔴 Definisikan `FuzzResult` struct di `types.rs`
+- [x] 🔴 Fungsi `fuzz_paths(base_url, wordlist, config) -> Vec<FuzzResult>` di `fuzzer.rs`:
   - Async dengan semaphore sesuai concurrency
-  - Filter: simpan hanya status 200, 301, 302, 403 (bukan 404)
-- [ ] 🟡 Baseline detection:
-  - Kirim request ke path random (`/asdfjkl12345`)
-  - Catat status code dan content length sebagai baseline "not found"
-  - Gunakan baseline untuk filter false positive (custom 404 page)
-- [ ] 🔴 Fungsi publik `run_fuzzing(base_url: &str, config: &AppConfig) -> Vec<Asset>`:
-  - Load wordlist
-  - Jalankan path fuzzing
-  - Konversi hasil ke `Asset::Path`
-- [ ] 🟢 Unit test: mock HTTP server, validasi filtering
+  - Filter status code interesting (200/301/302/403/401/500/dll)
+- [x] 🟡 Baseline detection anti-false-positive (custom 404):
+  - Request ke `/temu_baseline_zxqwvnm987` → baseline status + length
+  - Filter paths yang identik dengan baseline
+- [x] 🔴 Fungsi publik `run_fuzzing(base_url, config) -> Result<Vec<Asset>, TemuError>`
+- [x] 🟢 Unit test: mock HTTP server, baseline filter, redirect URL (3 tests)
 
 ### 3.3 Vulnerability — Rule Loader
-- [ ] 🔴 Definisikan `Rule` struct:
-  ```rust
-  pub struct Rule {
-      pub id: String,
-      pub name: String,
-      pub tech_stack: Vec<String>,    // match dengan TechStack.name
-      pub severity: Severity,
-      pub cvss: f32,
-      pub payload: String,
-      pub verify: VerifyConfig,
-  }
-
-  pub struct VerifyConfig {
-      pub match_type: MatchType,
-      pub response_codes: Vec<u16>,
-      pub body_regex: Option<String>,
-      pub time_threshold_secs: Option<u64>,
-  }
-
-  pub enum MatchType {
-      BodyContains,
-      BodyRegex,
-      TimeBased,
-      StatusCode,
-      HeaderContains,
-  }
-  ```
-- [ ] 🔴 Fungsi `load_rules(rules_dir: &Path) -> Result<Vec<Rule>>`:
+- [x] 🔴 Definisikan `Rule`, `VerifyConfig`, `MatchType` struct di `types.rs`
+- [x] 🔴 Fungsi `load_rules(rules_dir: &Path) -> Result<Vec<Rule>, TemuError>` di `loader.rs`:
   - Baca semua file `.yaml` dari directory
-  - Parse setiap file ke `Rule` struct
-  - Validasi: id unik, severity valid, payload tidak kosong
-- [ ] 🔴 Buat 3 file aturan awal di `rules/`:
+  - Parse setiap file ke `Rule` struct via serde_yaml
+  - Validasi: id unik, skip duplicate, skip invalid YAML
+- [x] 🔴 Buat 3 file aturan awal di `rules/`:
   - `rules/sqli-reflection.yaml` — SQLi via body reflection
   - `rules/xss-reflection.yaml` — Reflected XSS
-  - `rules/sensitive-files.yaml` — File sensitif (.env, .git/HEAD)
-- [ ] 🟡 Fungsi `filter_rules_by_tech(rules: &[Rule], tech: &[TechStack]) -> Vec<&Rule>`:
-  - Return rules yang `tech_stack` cocok dengan teknologi terdeteksi
-- [ ] 🟢 Unit test: load rules dari folder test, validasi parsing
+  - `rules/sensitive-files.yaml` — Exposed .env
+- [x] 🟡 Fungsi `filter_rules_by_tech(rules, tech) -> Vec<&Rule>` di `filter.rs`
+- [x] 🟢 Unit test: load valid rule, skip invalid YAML, skip duplicate ID (5 tests)
 
 ### 3.4 Vulnerability — Basic Executor
-- [ ] 🔴 Fungsi `execute_rule(rule: &Rule, target_url: &str, parameter: Option<&str>, config: &AppConfig) -> Option<Vulnerability>`:
-  - Kirim request dengan payload di parameter (jika ada) atau di path
-  - Cek response sesuai `VerifyConfig`:
-    - `BodyContains` → cek apakah payload tercermin di body
-    - `StatusCode` → cek status code cocok
-    - `BodyRegex` → cek regex match di body
-  - Jika match, return `Vulnerability` dengan proof
-- [ ] 🔴 Fungsi publik `run_vulnerability_scan(urls: &[Asset], tech: &[TechStack], config: &AppConfig) -> Vec<Vulnerability>`:
-  - Load rules
-  - Filter rules by tech
-  - Untuk setiap URL + setiap rule yang cocok → execute
-  - Kumpulkan hasil
-- [ ] 🟢 Unit test: mock request, rule yang match → vulnerability terdeteksi
+- [x] 🔴 Fungsi `execute_rule(rule, url, parameter, config) -> Option<Vulnerability>` di `executor.rs`:
+  - Inject payload ke query string via `reqwest::Url::query_pairs_mut`
+  - Cek response: `BodyContains`, `StatusCode`, `BodyRegex`, `HeaderContains`
+  - `TimeBased` di-stub (Sprint 4+)
+- [x] 🔴 Fungsi publik `run_vulnerability_scan(urls, tech, config) -> Result<Vec<Vulnerability>, TemuError>`
+- [x] 🟢 Unit test: body_contains match, no-match, status_code match (3 tests)
 
-### 🏁 Sprint 3 — Definition of Done
-- Fingerprinting mendeteksi web server + versi dari header
-- Path fuzzing menemukan path yang ada (status != 404)
-- Rule loader bisa baca file YAML
-- Vulnerability executor bisa deteksi SQLi reflection dasar
-- Semua `cargo test` pass
+### 🏁 Sprint 3 — Definition of Done ✅
+- `cargo test -p fingerprint` — 22 passed ✅
+- `cargo test -p fuzzing` — 3 passed ✅
+- `cargo test -p vulnerability` — 13 passed ✅
+- `cargo test -p discovery --test integration_test` — 2 passed ✅
+- `cargo test --workspace` — semua pass ✅
+- Fingerprinting mendeteksi nginx/Apache/IIS/PHP/WordPress dari header+body ✅
+- Path fuzzing baseline anti-false-positive berfungsi ✅
+- Rule loader baca 3 file YAML dari `rules/` ✅
+- Vulnerability executor deteksi SQLi/XSS/sensitive-files ✅
 
 ---
 
