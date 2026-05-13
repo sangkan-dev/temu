@@ -6,7 +6,7 @@ use cli::orchestrator;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use args::{Cli, Command, DiscoveryModeArg, ScanCommand};
+use args::{Cli, Command, DiscoveryModeArg, ScanCommand, WordlistSize};
 use clap::Parser;
 use discovery::DiscoveryMode;
 use reporter::generate_json;
@@ -28,6 +28,8 @@ async fn main() -> anyhow::Result<()> {
                 timeout,
                 output,
                 config: config_path,
+                wordlist_size,
+                wordlist,
             } => {
                 // Validate URL early
                 reqwest::Url::parse(&url)
@@ -50,6 +52,19 @@ async fn main() -> anyhow::Result<()> {
                     config.timeout_secs = t;
                 }
                 let output_dir = output.unwrap_or_else(|| config.output_dir.clone());
+
+                // Wordlist override: explicit path wins, otherwise resolve from size preset
+                config.wordlist_override = if let Some(custom) = wordlist {
+                    Some(custom)
+                } else {
+                    let filename = match wordlist_size {
+                        WordlistSize::Small => "subdomains-small.txt",
+                        WordlistSize::Medium => "subdomains-medium.txt",
+                        WordlistSize::Large => "subdomains-large.txt",
+                    };
+                    let preset = config.dictionaries_dir.join(filename);
+                    if preset.exists() { Some(preset) } else { None }
+                };
 
                 let discovery_mode = match mode {
                     DiscoveryModeArg::Bruteforce => DiscoveryMode::ActiveBruteforce,

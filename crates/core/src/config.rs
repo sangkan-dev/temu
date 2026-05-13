@@ -21,6 +21,10 @@ pub struct AppConfig {
     pub rules_dir: PathBuf,
     /// Directory containing wordlist files.
     pub dictionaries_dir: PathBuf,
+    /// Optional override path to a custom wordlist file. When set, this
+    /// takes precedence over the size-based preset from `dictionaries_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wordlist_override: Option<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -33,6 +37,7 @@ impl Default for AppConfig {
             output_dir: PathBuf::from("./results"),
             rules_dir: PathBuf::from("./rules"),
             dictionaries_dir: PathBuf::from("./dictionaries"),
+            wordlist_override: None,
         }
     }
 }

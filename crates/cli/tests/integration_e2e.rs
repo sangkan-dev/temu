@@ -16,6 +16,7 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         output_dir,
         rules_dir,
         dictionaries_dir,
+        wordlist_override: None,
     }
 }
 

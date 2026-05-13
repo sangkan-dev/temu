@@ -62,6 +62,14 @@ pub enum ScanCommand {
         /// Path to config file
         #[arg(long)]
         config: Option<std::path::PathBuf>,
+
+        /// Wordlist size preset for subdomain bruteforce
+        #[arg(long, default_value = "small")]
+        wordlist_size: WordlistSize,
+
+        /// Custom wordlist file path (overrides --wordlist-size)
+        #[arg(long)]
+        wordlist: Option<std::path::PathBuf>,
     },
     /// Scan a list of targets from a file (not yet implemented)
     File {
@@ -108,6 +116,14 @@ pub enum DiscoveryModeArg {
 #[derive(Debug, Clone, ValueEnum)]
 pub enum ReportFormat {
     Json,
+}
+
+#[derive(Debug, Clone, ValueEnum, Default)]
+pub enum WordlistSize {
+    #[default]
+    Small,
+    Medium,
+    Large,
 }
 
 #[cfg(test)]
@@ -258,5 +274,39 @@ mod tests {
             Cli::try_parse_from(["temu", "--verbose", "scan", "single", "--url", "https://x.com"])
                 .expect("--verbose before subcommand must work");
         assert!(cli.verbose);
+    }
+
+    #[test]
+    fn test_wordlist_size_flag() {
+        let cli = Cli::try_parse_from([
+            "temu", "scan", "single",
+            "--url", "https://example.com",
+            "--wordlist-size", "medium",
+        ])
+        .expect("--wordlist-size medium must parse");
+        match cli.command {
+            Command::Scan { mode: ScanCommand::Single { wordlist_size, wordlist, .. } } => {
+                assert!(matches!(wordlist_size, WordlistSize::Medium));
+                assert!(wordlist.is_none());
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_custom_wordlist_flag() {
+        let cli = Cli::try_parse_from([
+            "temu", "scan", "single",
+            "--url", "https://example.com",
+            "--wordlist", "/tmp/custom-words.txt",
+        ])
+        .expect("--wordlist custom path must parse");
+        match cli.command {
+            Command::Scan { mode: ScanCommand::Single { wordlist, wordlist_size, .. } } => {
+                assert_eq!(wordlist, Some(std::path::PathBuf::from("/tmp/custom-words.txt")));
+                assert!(matches!(wordlist_size, WordlistSize::Small)); // default unchanged
+            }
+            _ => panic!("expected Scan::Single"),
+        }
     }
 }

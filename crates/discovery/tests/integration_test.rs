@@ -12,6 +12,7 @@ fn make_config(dictionaries_dir: PathBuf) -> AppConfig {
         output_dir: PathBuf::from("/tmp/temu_test_output"),
         rules_dir: PathBuf::from("/tmp/temu_test_rules"),
         dictionaries_dir,
+        wordlist_override: None,
     }
 }
 

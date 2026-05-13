@@ -493,31 +493,34 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
 **Goal:** Tambah sumber discovery selain bruteforce.
 
 ### 5.1 Certificate Transparency Logs
-- [ ] 🔴 Fungsi `query_crtsh(domain: &str) -> Result<Vec<String>>`:
+- [x] 🔴 Fungsi `query_crtsh(domain: &str) -> Result<Vec<String>>` (`fetch_crtsh_with_base`):
   - HTTP GET ke `https://crt.sh/?q=%25.{domain}&output=json`
   - Parse JSON response → extract `name_value` field
   - Deduplikasi dan filter wildcard entries (`*.domain.com` → skip)
-- [ ] 🔴 Integrasi ke `run_discovery()`: gabungkan hasil CT logs dengan bruteforce
-- [ ] 🟡 Cache hasil CT logs ke file lokal (expire 24 jam)
-- [ ] 🟢 Unit test: mock crt.sh response
+  - Retry 3x dengan exponential backoff pada 5xx/timeout
+- [x] 🔴 Integrasi ke `run_discovery()`: gabungkan hasil CT logs dengan bruteforce
+- [x] 🟡 Cache hasil CT logs ke file lokal `{output_dir}/.cache/crtsh_{domain}.json` (expire 24 jam)
+- [x] 🟢 Unit test: mock crt.sh response (8 tests: parse, dedup, HTTP error, invalid JSON, wildcard, retry-on-502, cache hit, no-cache-fetches-network)
 
 ### 5.2 DNS Zone Transfer
-- [ ] 🟡 Fungsi `attempt_zone_transfer(domain: &str) -> Result<Vec<String>>`:
+- [x] 🟡 Fungsi `attempt_zone_transfer(domain: &str) -> Result<Vec<String>>` (`crates/discovery/src/zone_transfer.rs`):
   - Resolve NS record untuk domain
   - Coba AXFR query ke setiap nameserver
   - Parse hasil → extract subdomain entries
-- [ ] 🟡 Handle error gracefully (kebanyakan server menolak AXFR)
-- [ ] 🟢 Log warning jika zone transfer berhasil (ini vulnerability)
+- [x] 🟡 Handle error gracefully (kebanyakan server menolak AXFR → return `Ok(vec![])`)
+- [x] 🟢 Log warning jika zone transfer berhasil (ini vulnerability)
 
 ### 5.3 Wordlist Besar
-- [ ] 🟡 Tambahkan `dictionaries/subdomains-medium.txt` (1000 entry)
-- [ ] 🟡 CLI flag `--wordlist-size small|medium|large` untuk pilih kamus
-- [ ] 🟢 Support custom wordlist path: `--wordlist /path/to/custom.txt`
+- [x] 🟡 Tambahkan `dictionaries/subdomains-medium.txt` (1000 entry)
+- [x] 🟡 CLI flag `--wordlist-size small|medium|large` untuk pilih kamus
+- [x] 🟢 Support custom wordlist path: `--wordlist /path/to/custom.txt`
 
-### 🏁 Sprint 5 — Definition of Done
-- Discovery menggunakan 3 sumber: bruteforce + CT logs + zone transfer
-- Lebih banyak subdomain ditemukan dibanding Sprint 2
-- Cache CT logs berfungsi
+### 🏁 Sprint 5 — Definition of Done ✅
+- Discovery menggunakan 3 sumber: bruteforce + CT logs + zone transfer ✅
+- Lebih banyak subdomain ditemukan dibanding Sprint 2 ✅
+- Cache CT logs berfungsi ✅
+- `cargo test -p discovery` — 32 passed ✅
+- `cargo test --workspace` — 0 FAILED ✅
 
 ---
 

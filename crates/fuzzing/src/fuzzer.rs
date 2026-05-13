@@ -143,6 +143,7 @@ mod tests {
             output_dir: PathBuf::from("/tmp"),
             rules_dir: PathBuf::from("/tmp"),
             dictionaries_dir: PathBuf::from("/tmp"),
+            wordlist_override: None,
         }
     }
 
