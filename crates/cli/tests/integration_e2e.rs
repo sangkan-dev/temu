@@ -82,7 +82,7 @@ async fn test_full_pipeline_scan() {
     )
     .unwrap();
 
-    // Rules dir with our sensitive-files rule
+    // Rules dir with our sensitive-files rule + fingerprint rules
     let rules_dir = tmp.path().join("rules");
     std::fs::create_dir_all(&rules_dir).unwrap();
     std::fs::write(
@@ -102,6 +102,12 @@ remediation: "Move .env outside web root"
 "#,
     )
     .unwrap();
+
+    // Copy fingerprint_rules.yaml from workspace rules/ dir
+    let workspace_rules = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rules/fingerprint_rules.yaml");
+    if workspace_rules.exists() {
+        std::fs::copy(&workspace_rules, rules_dir.join("fingerprint_rules.yaml")).unwrap();
+    }
 
     let output_dir = tmp.path().join("results");
     let config = make_config(dict_dir, rules_dir, output_dir.clone());
