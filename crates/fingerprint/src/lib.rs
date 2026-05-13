@@ -1,29 +1,35 @@
-// Fingerprint crate — technology detection (Wappalyzer-style rules)
+// Fingerprint crate — technology detection (Wappalyzer-style YAML rules)
 
-pub mod body;
-pub mod headers;
+pub mod rules;
 pub mod types;
-pub mod waf;
 
-pub use types::{TechCategory, TechStack};
+pub use types::{FingerprintRule, TechCategory, TechStack};
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use reqwest::Client;
 use temu_core::{AppConfig, TemuError};
-use tracing::{debug, info};
+use tracing::{info, warn};
 
-use crate::body::fingerprint_from_body;
-use crate::headers::fingerprint_from_headers;
-use crate::waf::detect_waf;
+use crate::rules::{load_fingerprint_rules, match_all_rules};
 
-/// Sends a GET request to `url` and detects technologies from headers + body.
+/// Sends a GET request to `url` and detects technologies using YAML fingerprint rules.
 ///
-/// Results are deduplicated by name (highest confidence wins) and sorted by
-/// confidence descending.
+/// Rules are loaded from `{config.rules_dir}/fingerprint_rules.yaml`.
+/// If the rules file is missing, a warning is logged and an empty list is returned.
+/// Results are deduplicated by name (highest confidence wins) and sorted by confidence descending.
 pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechStack>, TemuError> {
-    debug!("Fingerprinting {url}");
+    info!("Fingerprinting {url}");
+
+    // Load rules
+    let rules_path = config.rules_dir.join("fingerprint_rules.yaml");
+    let rules = match load_fingerprint_rules(&rules_path) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Could not load fingerprint rules from {rules_path:?}: {e}");
+            return Ok(vec![]);
+        }
+    };
 
     let client = Client::builder()
         .timeout(Duration::from_secs(config.timeout_secs))
@@ -39,36 +45,20 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
         .await
         .map_err(|e| TemuError::Network(format!("Fingerprint request to {url} failed: {e}")))?;
 
-    let status = response.status().as_u16();
     let resp_headers = response.headers().clone();
 
-    let body = response
-        .text()
-        .await
-        .unwrap_or_default();
+    let body = response.text().await.unwrap_or_default();
 
-    let mut all: Vec<TechStack> = Vec::new();
-    all.extend(fingerprint_from_headers(&resp_headers));
-    all.extend(fingerprint_from_body(&body));
-    if let Some(waf) = detect_waf(&resp_headers, status, &body) {
-        all.push(waf);
+    let result = match_all_rules(&rules, &resp_headers, &body);
+
+    for tech in &result {
+        info!(
+            "Detected: {}{} (confidence: {:.2})",
+            tech.name,
+            tech.version.as_deref().map(|v| format!("/{v}")).unwrap_or_default(),
+            tech.confidence
+        );
     }
-
-    // Dedup by name — keep highest confidence
-    let mut by_name: HashMap<String, TechStack> = HashMap::new();
-    for tech in all {
-        by_name
-            .entry(tech.name.clone())
-            .and_modify(|existing| {
-                if tech.confidence > existing.confidence {
-                    *existing = tech.clone();
-                }
-            })
-            .or_insert(tech);
-    }
-
-    let mut result: Vec<TechStack> = by_name.into_values().collect();
-    result.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
 
     info!("Fingerprint {url}: {} technologies detected", result.len());
 
@@ -82,6 +72,13 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Returns the workspace root rules/ directory using CARGO_MANIFEST_DIR.
+    fn rules_dir() -> PathBuf {
+        // crates/fingerprint → workspace root → rules/
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest.join("../../rules")
+    }
+
     fn test_config() -> AppConfig {
         AppConfig {
             rate_limit: 10,
@@ -89,7 +86,7 @@ mod tests {
             concurrency: 4,
             user_agent: "Temu-Test/0.1.0".to_string(),
             output_dir: PathBuf::from("/tmp"),
-            rules_dir: PathBuf::from("/tmp"),
+            rules_dir: rules_dir(),
             dictionaries_dir: PathBuf::from("/tmp"),
             wordlist_override: None,
         }
@@ -159,5 +156,47 @@ mod tests {
 
         let nginx_count = result.iter().filter(|t| t.name == "nginx").count();
         assert_eq!(nginx_count, 1, "nginx should appear only once after dedup");
+    }
+
+    #[tokio::test]
+    async fn test_run_fingerprint_implies_chain() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"<html><head><meta name="generator" content="WordPress 6.3"/></head><body><a href="/wp-content/themes/x">theme</a></body></html>"#),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let result = run_fingerprint(&mock_server.uri(), &test_config())
+            .await
+            .unwrap();
+
+        // WordPress implies PHP and MySQL
+        assert!(result.iter().any(|t| t.name == "WordPress"), "WordPress missing");
+        assert!(result.iter().any(|t| t.name == "PHP"), "PHP not implied by WordPress");
+        assert!(result.iter().any(|t| t.name == "MySQL"), "MySQL not implied by WordPress");
+    }
+
+    #[tokio::test]
+    async fn test_run_fingerprint_missing_rules_returns_empty() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<html></html>"))
+            .mount(&mock_server)
+            .await;
+
+        let config = AppConfig {
+            rules_dir: PathBuf::from("/nonexistent/rules"),
+            ..AppConfig::default()
+        };
+
+        let result = run_fingerprint(&mock_server.uri(), &config).await.unwrap();
+        assert!(result.is_empty(), "should return empty when rules file missing");
     }
 }
