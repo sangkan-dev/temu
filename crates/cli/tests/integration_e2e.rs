@@ -324,3 +324,44 @@ fn test_benchmark_100_url_aggregation_records_time_and_size() {
         "benchmark report should have measurable size"
     );
 }
+
+#[test]
+fn test_benchmark_10k_url_aggregation_stays_fast() {
+    use chrono::Utc;
+
+    let started = Instant::now();
+    let scan_started_at = Utc::now();
+    let results = (0..10_000)
+        .map(|index| ScanResult {
+            target: format!("https://target-{index}.example"),
+            assets: vec![Asset::new(
+                format!("https://target-{index}.example"),
+                AssetType::Url,
+                "benchmark",
+            )],
+            tech_stacks: HashMap::new(),
+            vulnerabilities: Vec::new(),
+            target_summaries: Vec::new(),
+            scan_started_at,
+            scan_finished_at: scan_started_at,
+            stats: reporter::ScanStats {
+                subdomains_found: 0,
+                paths_found: 0,
+                parameters_found: 0,
+                vulns_found: 0,
+                duration_secs: 0.0,
+            },
+        })
+        .collect::<Vec<_>>();
+
+    let aggregate = cli::orchestrator::aggregate_scan_results("benchmark:10k-urls", &results);
+    let elapsed = started.elapsed();
+    let report_bytes = serde_json::to_vec(&aggregate).unwrap().len();
+
+    assert_eq!(aggregate.target_summaries.len(), 10_000);
+    assert!(elapsed.as_secs_f64() < 2.0, "aggregation took {elapsed:?}");
+    assert!(
+        report_bytes > 100_000,
+        "benchmark report should have measurable size"
+    );
+}

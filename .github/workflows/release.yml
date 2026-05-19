@@ -1,0 +1,47 @@
+name: Release Builds
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  linux-static:
+    name: Linux x86_64 static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build static binary
+        run: |
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu -p cli
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: temu-linux-x86_64-static
+          path: target/x86_64-unknown-linux-gnu/release/temu
+
+  macos-arm64:
+    name: macOS arm64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build binary
+        run: cargo build --release --target aarch64-apple-darwin -p cli
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: temu-macos-arm64
+          path: target/aarch64-apple-darwin/release/temu

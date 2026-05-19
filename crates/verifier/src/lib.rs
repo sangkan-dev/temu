@@ -1,6 +1,7 @@
 //! Verifier crate — false positive reduction.
 
 use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use regex::Regex;
@@ -11,6 +12,11 @@ use tracing::{info, warn};
 use vulnerability::{MatchType, Rule, load_rules};
 
 const VERIFY_PARAM_NAME: &str = "temu_verify";
+const MAX_VERIFY_BODY_BYTES: usize = 1024 * 1024;
+static SLEEP_RE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"(?i)SLEEP\(\s*\d+\s*\)").ok());
+static BODY_REGEX_CACHE: LazyLock<Mutex<HashMap<String, Regex>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Result of verifying one finding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -232,7 +238,7 @@ async fn verify_time_based_with_client(
 }
 
 fn adjusted_sleep_payload_urls(vuln: &Vulnerability, threshold_secs: u64) -> Vec<String> {
-    let Ok(sleep_re) = Regex::new(r"(?i)SLEEP\(\s*\d+\s*\)") else {
+    let Some(sleep_re) = SLEEP_RE.as_ref() else {
         return vec![vuln.url.clone()];
     };
     if !sleep_re.is_match(&vuln.url) {
@@ -273,7 +279,9 @@ async fn verify_reflection_with_client(vuln: &Vulnerability, client: &Client) ->
             };
         }
     };
-    let body = response.text().await.unwrap_or_default();
+    let body = read_limited_text(response, MAX_VERIFY_BODY_BYTES)
+        .await
+        .unwrap_or_default();
 
     if body.contains(&marker) || body.contains(&html_escape(&marker)) {
         let context = reflection_context(&body, &marker);
@@ -302,7 +310,9 @@ async fn verify_body_with_client(
         }
     };
     let status = response.status().as_u16();
-    let body = response.text().await.unwrap_or_default();
+    let body = read_limited_text(response, MAX_VERIFY_BODY_BYTES)
+        .await
+        .unwrap_or_default();
     let status_ok =
         rule.verify.response_codes.is_empty() || rule.verify.response_codes.contains(&status);
 
@@ -317,8 +327,7 @@ async fn verify_body_with_client(
             .verify
             .body_regex
             .as_deref()
-            .and_then(|pattern| Regex::new(pattern).ok())
-            .map(|re| re.is_match(&body))
+            .map(|pattern| cached_regex_match(pattern, &body))
             .unwrap_or(false),
         _ => false,
     };
@@ -493,25 +502,73 @@ fn html_escape(value: &str) -> String {
 }
 
 fn reflection_context(body: &str, marker: &str) -> &'static str {
-    if Regex::new(&format!(
-        r"(?is)<script[^>]*>.*{}.*</script>",
-        regex::escape(marker)
-    ))
-    .map(|re| re.is_match(body))
-    .unwrap_or(false)
-    {
+    let Some(marker_start) = body.find(marker) else {
+        return "text";
+    };
+    let marker_end = marker_start.saturating_add(marker.len());
+    let before = &body[..marker_start];
+    let after = &body[marker_end..];
+    let before_lower = before.to_ascii_lowercase();
+    let after_lower = after.to_ascii_lowercase();
+    let script_open = before_lower.rfind("<script");
+    let script_close_before = before_lower.rfind("</script>");
+    let script_close_after = after_lower.find("</script>");
+
+    if script_open.is_some() && script_close_after.is_some() && script_open > script_close_before {
         "script"
-    } else if Regex::new(&format!(
-        r#"(?is)<[^>]+\s+\w+=["'][^"']*{}[^"']*["']"#,
-        regex::escape(marker)
-    ))
-    .map(|re| re.is_match(body))
-    .unwrap_or(false)
-    {
+    } else if is_attribute_context(before, after) {
         "attribute"
     } else {
         "text"
     }
+}
+
+fn is_attribute_context(before: &str, after: &str) -> bool {
+    let Some(tag_start) = before.rfind('<') else {
+        return false;
+    };
+    if before[tag_start..].contains('>') {
+        return false;
+    }
+    let before_tag = &before[tag_start..];
+    let Some(last_quote) = before_tag.rfind(['"', '\'']) else {
+        return false;
+    };
+    let quote = before_tag.as_bytes()[last_quote] as char;
+    if !before_tag[..last_quote].contains('=') {
+        return false;
+    }
+    after.find(quote).is_some_and(|quote_index| {
+        let closing_tag = after.find('>').unwrap_or(after.len());
+        quote_index < closing_tag
+    })
+}
+
+fn cached_regex_match(pattern: &str, text: &str) -> bool {
+    let re = {
+        let Ok(mut cache) = BODY_REGEX_CACHE.lock() else {
+            return false;
+        };
+        if !cache.contains_key(pattern) {
+            let Ok(re) = Regex::new(pattern) else {
+                return false;
+            };
+            cache.insert(pattern.to_string(), re);
+        }
+        cache.get(pattern).cloned()
+    };
+    re.map(|re| re.is_match(text)).unwrap_or(false)
+}
+
+async fn read_limited_text(mut response: reqwest::Response, max_bytes: usize) -> Option<String> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        let remaining = max_bytes.saturating_sub(body.len());
+        if remaining > 0 {
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
+    }
+    Some(String::from_utf8_lossy(&body).into_owned())
 }
 
 #[cfg(test)]

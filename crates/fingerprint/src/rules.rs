@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use rayon::prelude::*;
 use regex::Regex;
 use reqwest::header::HeaderMap;
 use tracing::debug;
@@ -172,7 +173,7 @@ fn extract_cookie(cookie_header: &str, cookie_name: &str) -> Option<String> {
     for part in cookie_header.split(';') {
         let part = part.trim();
         if let Some((name, value)) = part.split_once('=')
-            && name.trim().to_lowercase() == cookie_name.to_lowercase()
+            && name.trim().eq_ignore_ascii_case(cookie_name)
         {
             return Some(value.trim().to_string());
         }
@@ -190,40 +191,48 @@ pub fn match_all_rules(
     body: &str,
 ) -> Vec<TechStack> {
     // Collect Set-Cookie values
-    let cookie_header: String = headers
-        .get_all("set-cookie")
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
+    let mut cookie_header = String::new();
+    for value in headers.get_all("set-cookie").iter() {
+        let Ok(value) = value.to_str() else {
+            continue;
+        };
+        if !cookie_header.is_empty() {
+            cookie_header.push_str("; ");
+        }
+        cookie_header.push_str(value);
+    }
 
     let mut results: HashMap<String, TechStack> = HashMap::new();
 
-    // First pass: match all rules
-    for rule in rules {
-        if let Some(compiled) = CompiledRule::compile(rule)
-            && let Some(captured_version) = compiled.try_match(headers, body, &cookie_header)
-        {
-            let tech = TechStack::new(
+    // First pass: compile and match rules in parallel because regex matching is CPU-bound.
+    let matches: Vec<TechStack> = rules
+        .par_iter()
+        .filter_map(|rule| {
+            let compiled = CompiledRule::compile(rule)?;
+            let captured_version = compiled.try_match(headers, body, &cookie_header)?;
+            Some(TechStack::new(
                 rule.name.clone(),
                 captured_version,
                 rule.confidence,
                 rule.category.clone(),
-            );
-            debug!(
-                "Fingerprint match: {} (confidence: {:.2})",
-                tech.name, tech.confidence
-            );
-            // Keep highest confidence for same name
-            results
-                .entry(rule.name.clone())
-                .and_modify(|existing| {
-                    if tech.confidence > existing.confidence {
-                        *existing = tech.clone();
-                    }
-                })
-                .or_insert(tech);
-        }
+            ))
+        })
+        .collect();
+
+    for tech in matches {
+        debug!(
+            "Fingerprint match: {} (confidence: {:.2})",
+            tech.name, tech.confidence
+        );
+        // Keep highest confidence for same name
+        results
+            .entry(tech.name.clone())
+            .and_modify(|existing| {
+                if tech.confidence > existing.confidence {
+                    *existing = tech.clone();
+                }
+            })
+            .or_insert(tech);
     }
 
     // Second pass: resolve implies

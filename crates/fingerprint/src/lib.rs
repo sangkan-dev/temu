@@ -13,6 +13,8 @@ use tracing::{info, warn};
 
 use crate::rules::{load_fingerprint_rules, match_all_rules};
 
+const MAX_FINGERPRINT_BODY_BYTES: usize = 1024 * 1024;
+
 /// Sends a GET request to `url` and detects technologies using YAML fingerprint rules.
 ///
 /// Rules are loaded from `{config.rules_dir}/fingerprint_rules.yaml`.
@@ -36,6 +38,8 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(3))
         .user_agent(&config.user_agent)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(config.concurrency.max(1))
         .build()
         .map_err(|e| TemuError::Network(e.to_string()))?;
 
@@ -47,7 +51,9 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
 
     let resp_headers = response.headers().clone();
 
-    let body = response.text().await.unwrap_or_default();
+    let body = read_limited_text(response, MAX_FINGERPRINT_BODY_BYTES)
+        .await
+        .unwrap_or_default();
 
     let result = match_all_rules(&rules, &resp_headers, &body);
 
@@ -66,6 +72,17 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
     info!("Fingerprint {url}: {} technologies detected", result.len());
 
     Ok(result)
+}
+
+async fn read_limited_text(mut response: reqwest::Response, max_bytes: usize) -> Option<String> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        let remaining = max_bytes.saturating_sub(body.len());
+        if remaining > 0 {
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
+    }
+    Some(String::from_utf8_lossy(&body).into_owned())
 }
 
 #[cfg(test)]

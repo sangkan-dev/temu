@@ -16,6 +16,7 @@ const INTERESTING_STATUSES: &[u16] = &[200, 201, 204, 301, 302, 307, 308, 401, 4
 const BASELINE_PATH: &str = "/temu_baseline_zxqwvnm987";
 const PARAMETER_PROBE_VALUE: &str = "test123";
 const MAX_RETRIES: u32 = 3;
+const MAX_PARAMETER_BODY_BYTES: usize = 1024 * 1024;
 
 /// Sends a single GET request and returns the result, or `None` on network error.
 async fn probe_path(
@@ -43,8 +44,7 @@ async fn probe_path(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let body = resp.bytes().await.ok()?;
-    let content_length = body.len() as u64;
+    let content_length = response_body_len(resp).await?;
 
     Some(FuzzResult {
         url,
@@ -65,9 +65,34 @@ async fn probe_url(
     let host = url.host_str().map(str::to_string);
     let resp = send_get_with_resilience(client, limiter, url.as_str(), host.as_deref()).await?;
     let status_code = resp.status().as_u16();
-    let body = resp.text().await.ok()?;
-    let content_length = body.len() as u64;
+    let (content_length, body) = read_limited_text(resp, MAX_PARAMETER_BODY_BYTES).await?;
     Some((status_code, content_length, body))
+}
+
+async fn response_body_len(mut response: reqwest::Response) -> Option<u64> {
+    let mut len = 0u64;
+    while let Some(chunk) = response.chunk().await.ok()? {
+        len = len.saturating_add(chunk.len() as u64);
+    }
+    Some(len)
+}
+
+async fn read_limited_text(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+) -> Option<(u64, String)> {
+    let mut total_len = 0u64;
+    let mut body = Vec::new();
+
+    while let Some(chunk) = response.chunk().await.ok()? {
+        total_len = total_len.saturating_add(chunk.len() as u64);
+        let remaining = max_bytes.saturating_sub(body.len());
+        if remaining > 0 {
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
+    }
+
+    Some((total_len, String::from_utf8_lossy(&body).into_owned()))
 }
 
 async fn send_get_with_resilience(
