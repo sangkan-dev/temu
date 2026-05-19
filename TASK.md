@@ -864,7 +864,7 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
 **Goal:** Aturan deteksi untuk kerentanan CVE terkenal.
 
 ### 12.1 Rule Authoring
-- [ ] 🔴 Tulis rules untuk 10 CVE terkenal:
+- [x] 🔴 Tulis rules untuk 10 CVE terkenal:
   - `rules/cve-2021-44228-log4shell.yaml` (Log4j RCE)
   - `rules/cve-2021-41773-apache-path-traversal.yaml`
   - `rules/cve-2023-44487-http2-rapid-reset.yaml`
@@ -877,7 +877,7 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
   - `rules/cve-2024-3400-palo-alto-rce.yaml`
 
 ### 12.2 Extended Rule Format
-- [ ] 🔴 Tambahkan field ke `Rule` struct:
+- [x] 🔴 Tambahkan field ke `Rule` struct:
   ```rust
   pub cve_id: Option<String>,
   pub references: Vec<String>,     // URL referensi
@@ -886,20 +886,23 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
   pub request_headers: HashMap<String, String>,  // custom headers
   pub request_body: Option<String>,              // POST body
   ```
-- [ ] 🔴 Update rule loader untuk support field baru
-- [ ] 🟡 Support multi-step detection (kirim request A, lalu request B)
-- [ ] 🟢 Validasi rule: warning jika payload berbahaya (DELETE, DROP, dll)
+- [x] 🔴 Update rule loader untuk support field baru
+- [x] 🟡 Support multi-step detection (kirim request A, lalu request B)
+- [x] 🟢 Validasi rule: warning jika payload berbahaya (DELETE, DROP, dll)
 
 ### 12.3 Safe Payload Guidelines
-- [ ] 🔴 Dokumentasi internal: payload harus read-only
-- [ ] 🔴 Untuk Log4Shell: gunakan DNS callback ke domain controlled (contoh: `${jndi:ldap://UNIQUE_ID.oast.temu/a}`)
+- [x] 🔴 Dokumentasi internal: payload harus read-only
+- [x] 🔴 Untuk Log4Shell: gunakan DNS callback ke domain controlled (contoh: `${jndi:ldap://UNIQUE_ID.oast.temu/a}`)
   - Atau gunakan pattern matching di response header/body tanpa actual callback
-- [ ] 🟡 Warning di CLI jika rule menggunakan payload yang berpotensi destructive
+- [x] 🟡 Warning di CLI jika rule menggunakan payload yang berpotensi destructive
 
-### 🏁 Sprint 12 — Definition of Done
-- 10 CVE-specific rules berfungsi
-- Extended rule format didukung
-- Payload aman (read-only)
+### 🏁 Sprint 12 — Definition of Done ✅
+- 10 CVE-specific rules berfungsi ✅
+- Extended rule format didukung ✅
+- Payload aman (read-only) ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo fmt --all --check` — formatted ✅
 
 ---
 
