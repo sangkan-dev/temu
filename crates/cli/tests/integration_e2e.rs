@@ -13,7 +13,7 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         rate_limit: 50,
         timeout_secs: 5,
         concurrency: 4,
-        user_agent: "Temu-Test/0.1.0".to_string(),
+        user_agent: "Temu-Test/1.0.0".to_string(),
         output_dir,
         rules_dir,
         dictionaries_dir,

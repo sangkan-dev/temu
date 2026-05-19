@@ -1,0 +1,5 @@
+http://juice-shop:3000
+http://webgoat:8080/WebGoat
+http://dvwa
+http://benchmark-nginx
+http://benchmark-httpbin

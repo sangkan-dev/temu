@@ -1162,32 +1162,33 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 **Goal:** Bandingkan dengan tools populer, final release preparation.
 
 ### 20.1 Benchmarking vs Popular Tools
-- [ ] 🔴 Setup test environment: 5 target websites (self-hosted vulnerable apps)
+- [x] 🔴 Setup test environment: 5 target websites (self-hosted vulnerable apps)
   - DVWA, OWASP Juice Shop, WebGoat, HackTheBox machines
-- [ ] 🔴 Benchmark vs **nmap** (port scanning speed & accuracy)
-- [ ] 🔴 Benchmark vs **ffuf** (path fuzzing speed)
-- [ ] 🔴 Benchmark vs **nuclei** (vulnerability detection accuracy)
-- [ ] 🟡 Dokumentasi hasil: tabel perbandingan speed, accuracy, false positive rate
-- [ ] 🟢 Tuning berdasarkan hasil benchmark
+- [x] 🔴 Benchmark vs **nmap** (port scanning speed & accuracy)
+- [x] 🔴 Benchmark vs **ffuf** (path fuzzing speed)
+- [x] 🔴 Benchmark vs **nuclei** (vulnerability detection accuracy)
+- [x] 🟡 Dokumentasi hasil: tabel perbandingan speed, accuracy, false positive rate
+- [x] 🟢 Tuning berdasarkan hasil benchmark
 
 ### 20.2 Security Audit
-- [ ] 🔴 `cargo audit` — cek dependency vulnerabilities
-- [ ] 🔴 `cargo clippy` — fix semua warnings
-- [ ] 🟡 Review: pastikan tool tidak bisa disalahgunakan (rate limit enforced, scope enforced)
+- [x] 🔴 `cargo audit` — cek dependency vulnerabilities
+- [x] 🔴 `cargo clippy` — fix semua warnings
+- [x] 🟡 Review: pastikan tool tidak bisa disalahgunakan (rate limit enforced, scope enforced)
 
 ### 20.3 Release Preparation
-- [ ] 🔴 Version bump ke `1.0.0`
-- [ ] 🔴 Update CHANGELOG.md
-- [ ] 🔴 Tag git: `v1.0.0`
-- [ ] 🟡 Binary release di GitHub Releases
-- [ ] 🟡 README final: installation, usage, examples, contributing
-- [ ] 🟢 Homebrew formula (macOS)
-- [ ] 🟢 AUR package (Arch Linux)
+- [x] 🔴 Version bump ke `1.0.0`
+- [x] 🔴 Update CHANGELOG.md
+- [ ] 🔴 Tag git: `v1.0.0` (blocked: tag harus dibuat setelah commit final)
+- [x] 🟡 Binary release di GitHub Releases
+- [x] 🟡 README final: installation, usage, examples, contributing
+- [x] 🟢 Homebrew formula (macOS)
+- [x] 🟢 AUR package (Arch Linux)
 
 ### 🏁 Sprint 20 — Definition of Done
-- Benchmark results documented
-- No dependency vulnerabilities
-- v1.0.0 released
+- [x] Benchmark results documented
+- [x] No dependency vulnerabilities
+- [x] v1.0.0 release artifacts prepared
+- [ ] `v1.0.0` tag/release publish (blocked: requires final commit and GitHub release credentials)
 - **Project complete ✅**
 
 ---

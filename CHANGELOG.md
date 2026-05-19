@@ -6,6 +6,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.0] — 2026-05-19
+
+First complete release candidate for the Temu scanner.
+
+### Added
+
+- Distributed scanning with Redis-backed coordinator and workers.
+- TCP port scanning, banner collection, multi-target file input, and CIDR scanning.
+- CVE client with NVD/CISA KEV integration and SQLite cache.
+- Verifier crate for false-positive reduction.
+- JSON, HTML, and PDF reporting.
+- Parameter fuzzing, recursive path fuzzing, adaptive rate limiting, and performance tuning.
+- Dockerfile and Docker Compose benchmark environment with isolated vulnerable targets.
+- `temu rules update` for rules-as-code updates from a raw GitHub-compatible rules repository.
+- Scheduled GitHub Actions workflow to refresh upstream fingerprint/CVE rule sources through reviewed pull requests.
+- Homebrew and AUR packaging templates.
+
+### Changed
+
+- Default user agent and crate versions are now `Temu/1.0.0`.
+- Release workflow supports static Linux builds and macOS builds through GitHub Actions.
+
+### Security
+
+- Payload safety validation remains read-only by default.
+- Scope enforcement, conservative rate limits, and local-only result storage were reviewed for final release.
+
 ## [0.1.0-alpha] — 2025-05-12
 
 First functional MVP. All core pipeline stages are wired end-to-end.

@@ -1,5 +1,6 @@
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use hickory_resolver::proto::rr::RecordType;
 use tracing::{debug, info, warn};
 
@@ -12,7 +13,13 @@ use temu_core::TemuError;
 ///
 /// Returns a list of hostnames extracted from the zone records.
 pub async fn attempt_zone_transfer(domain: &str) -> Result<Vec<String>, TemuError> {
-    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+    let resolver = TokioResolver::builder_with_config(
+        ResolverConfig::default(),
+        TokioRuntimeProvider::default(),
+    )
+    .with_options(ResolverOpts::default())
+    .build()
+    .map_err(|e| TemuError::Dns(format!("Resolver init: {e}")))?;
 
     // Step 1: Resolve NS records for the domain
     let ns_lookup = match resolver.ns_lookup(domain).await {
@@ -23,7 +30,11 @@ pub async fn attempt_zone_transfer(domain: &str) -> Result<Vec<String>, TemuErro
         }
     };
 
-    let nameservers: Vec<String> = ns_lookup.iter().map(|ns| ns.0.to_ascii()).collect();
+    let nameservers: Vec<String> = ns_lookup
+        .answers()
+        .iter()
+        .map(|record| record.data.to_string())
+        .collect();
 
     if nameservers.is_empty() {
         debug!("Zone transfer: no NS records found for {domain}");
@@ -63,7 +74,7 @@ pub async fn attempt_zone_transfer(domain: &str) -> Result<Vec<String>, TemuErro
         match resolver.lookup(ns_str, RecordType::AXFR).await {
             Ok(records) => {
                 warn!("Zone transfer SUCCEEDED from {ns} for {domain} — server is misconfigured!");
-                for record in records.iter() {
+                for record in records.answers() {
                     let name = record.to_string();
                     let name = name.trim_end_matches('.');
                     if name == domain_lower || name.ends_with(&format!(".{domain_lower}")) {

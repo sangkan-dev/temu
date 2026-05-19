@@ -1,0 +1,9 @@
+target/
+results/
+.git/
+.github/
+*.log
+*.profraw
+perf.data*
+flamegraph.svg
+heaptrack.*

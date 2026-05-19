@@ -7,8 +7,9 @@ use cli::orchestrator;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use args::{Cli, Command, DiscoveryModeArg, ReportFormat, ScanCommand, WordlistSize};
+use args::{Cli, Command, DiscoveryModeArg, ReportFormat, RulesCommand, ScanCommand, WordlistSize};
 use clap::Parser;
+use cli::rules_update;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
 use reporter::{ScanResult, generate_html, generate_json, generate_pdf};
 use temu_core::init_logging;
@@ -179,6 +180,23 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+
+        Command::Rules { mode: rules_cmd } => match rules_cmd {
+            RulesCommand::Update { repo_url } => {
+                let default_config_path = std::path::PathBuf::from("config/default.toml");
+                let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                let repo_url = repo_url
+                    .or_else(|| std::env::var("TEMU_RULES_REPO_URL").ok())
+                    .unwrap_or_else(|| rules_update::default_rules_repo_url().to_string());
+                eprintln!("[*] Updating detection rules from {repo_url}");
+                let summary = rules_update::update_rules_from_repo(&repo_url, &config.rules_dir)
+                    .await
+                    .with_context(|| "Failed to update detection rules")?;
+                for path in summary.written_files {
+                    println!("{}", path.display());
+                }
+            }
+        },
     }
 
     Ok(())

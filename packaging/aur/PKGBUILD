@@ -1,0 +1,26 @@
+pkgname=temu
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Automated cybersecurity scanner'
+arch=('x86_64')
+url='https://github.com/sangkan-dev/temu'
+license=('MIT')
+makedepends=('cargo')
+source=("temu-${pkgver}.tar.gz::https://github.com/sangkan-dev/temu/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "temu-${pkgver}"
+  cargo build --release -p cli --locked
+}
+
+check() {
+  cd "temu-${pkgver}"
+  cargo test --workspace --locked
+}
+
+package() {
+  cd "temu-${pkgver}"
+  install -Dm755 target/release/temu "${pkgdir}/usr/bin/temu"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/temu/README.md"
+}

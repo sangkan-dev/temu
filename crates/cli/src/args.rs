@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(
     name = "temu",
-    version = "0.1.0",
+    version = "1.0.0",
     author = "Temu Security",
     about = "Automated cybersecurity scanner"
 )]
@@ -56,6 +56,11 @@ pub enum Command {
     Cve {
         #[command(subcommand)]
         mode: CveCommand,
+    },
+    /// Update detection rules from a remote rules repository
+    Rules {
+        #[command(subcommand)]
+        mode: RulesCommand,
     },
 }
 
@@ -138,6 +143,16 @@ pub enum CveCommand {
         /// CPE name to refresh from NVD. Can be passed multiple times.
         #[arg(long)]
         cpe: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RulesCommand {
+    /// Download fingerprint, vulnerability, and network rules into the local rules directory
+    Update {
+        /// Raw GitHub-compatible repository base URL.
+        #[arg(long)]
+        repo_url: Option<String>,
     },
 }
 
@@ -430,6 +445,32 @@ mod tests {
                 assert_eq!(cpe, vec!["cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*"]);
             }
             _ => panic!("expected Cve::Update"),
+        }
+    }
+
+    #[test]
+    fn test_rules_update_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "rules",
+            "update",
+            "--repo-url",
+            "https://raw.githubusercontent.com/sangkan-dev/sangkan-rules/main",
+        ])
+        .expect("rules update must parse");
+        match cli.command {
+            Command::Rules {
+                mode: RulesCommand::Update { repo_url },
+            } => {
+                assert_eq!(
+                    repo_url,
+                    Some(
+                        "https://raw.githubusercontent.com/sangkan-dev/sangkan-rules/main"
+                            .to_string()
+                    )
+                );
+            }
+            _ => panic!("expected Rules::Update"),
         }
     }
 

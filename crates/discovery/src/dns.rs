@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use tokio::sync::Semaphore;
 use tracing::{debug, info, warn};
 
@@ -11,14 +12,14 @@ use temu_core::{Asset, AssetType, TemuError};
 
 /// Async DNS resolver wrapper with wildcard detection support.
 pub struct DnsResolver {
-    inner: TokioAsyncResolver,
+    inner: TokioResolver,
 }
 
 impl DnsResolver {
     /// Creates a new `DnsResolver` using the system's default resolver configuration.
     pub async fn new() -> Result<Self, TemuError> {
         let resolver =
-            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+            build_tokio_resolver().map_err(|e| TemuError::Dns(format!("Resolver init: {e}")))?;
         Ok(Self { inner: resolver })
     }
 
@@ -71,10 +72,7 @@ impl DnsResolver {
     ) -> Vec<Asset> {
         let wildcard_ips = self.wildcard_ips(domain).await;
         let semaphore = Arc::new(Semaphore::new(concurrency));
-        let resolver = Arc::new(TokioAsyncResolver::tokio(
-            ResolverConfig::default(),
-            ResolverOpts::default(),
-        ));
+        let resolver = Arc::new(self.inner.clone());
 
         let mut handles = Vec::with_capacity(wordlist.len());
 
@@ -129,6 +127,13 @@ impl DnsResolver {
 
         assets
     }
+}
+
+fn build_tokio_resolver() -> Result<TokioResolver, String> {
+    TokioResolver::builder_with_config(ResolverConfig::default(), TokioRuntimeProvider::default())
+        .with_options(ResolverOpts::default())
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

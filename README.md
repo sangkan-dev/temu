@@ -11,8 +11,10 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 - Single-target web scan pipeline: discovery, fingerprinting, fuzzing, vulnerability detection, verification, reporting.
 - Multi-target scan from a file list.
 - IPv4 CIDR scan with TCP port scanning and banner collection.
+- Distributed scanning with Redis-backed workers.
 - CVE lookup from NVD/CISA KEV with SQLite cache.
 - YAML vulnerability rules with read-only payloads.
+- Rules-as-code updates from a raw GitHub-compatible rules repository.
 - Advanced detections for time-based SQL injection, SSRF indicators, path traversal, open redirect, and missing security headers.
 - JSON, HTML, and PDF reports.
 
@@ -80,6 +82,14 @@ Network scan:
 cargo run -p cli -- scan network --cidr 192.168.1.0/24 --ports 80,443,8080
 ```
 
+Distributed scan:
+
+```bash
+docker compose --profile distributed up -d redis
+docker compose --profile distributed up -d --scale temu-worker=3 temu-worker
+docker compose --profile distributed run --rm temu-coordinator
+```
+
 Generate a report from an existing JSON result:
 
 ```bash
@@ -93,6 +103,14 @@ Update CVE cache:
 ```bash
 cargo run -p cli -- cve update
 cargo run -p cli -- cve update --cpe cpe:2.3:a:nginx:nginx:1.18.0:*:*:*:*:*:*:*
+```
+
+Update local detection rules from a rules-as-code repository:
+
+```bash
+cargo run -p cli -- rules update
+cargo run -p cli -- rules update \
+  --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
 ```
 
 Discovery modes:
@@ -120,7 +138,7 @@ Default configuration lives in `config/default.toml`:
 rate_limit = 50
 timeout_secs = 10
 concurrency = 100
-user_agent = "Temu/0.1.0"
+user_agent = "Temu/1.0.0"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
@@ -137,6 +155,38 @@ Environment overrides:
 - `TEMU_RULES_DIR`
 - `TEMU_DICTIONARIES_DIR`
 - `TEMU_MAX_RECURSION_DEPTH`
+- `TEMU_RULES_REPO_URL` for `temu rules update`
+
+## Docker
+
+Build the isolated scanner image:
+
+```bash
+docker compose build temu
+docker compose run --rm temu --help
+```
+
+Run local benchmark targets:
+
+```bash
+docker compose --profile benchmark up -d juice-shop webgoat dvwa benchmark-nginx benchmark-httpbin
+```
+
+The benchmark profile exposes intentionally vulnerable apps on localhost only. See [docs/benchmark.md](docs/benchmark.md) for comparison commands against `nmap`, `ffuf`, and `nuclei`.
+
+## Rules As Code
+
+Temu can keep first-party rules in this repository and consume an external rules repository through `temu rules update`. The remote repository should expose a `rules-manifest.json` at its raw base URL:
+
+```json
+{
+  "fingerprint": "fingerprint/fingerprint_rules.yaml",
+  "vulnerability": ["vulnerability/sql-injection.yaml"],
+  "network": ["network/ssh.yaml"]
+}
+```
+
+The bundled `.github/workflows/update-rules.yml` cron workflow refreshes upstream Wappalyzer, FingerprintHub, and NVD snapshots into `rules/upstream/` and opens a pull request for review. Promote only validated, read-only detections into first-party Temu YAML rules.
 
 ## Rule Safety
 
@@ -173,3 +223,7 @@ results/          local output, gitignored
 ## Security Scope
 
 Only scan systems you are authorized to assess. Temu has conservative defaults, but it still sends network traffic, probes paths, checks parameters, and may trigger application logging or security alerts.
+
+## Contributing
+
+Use `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --workspace`, and `cargo build` before opening a pull request. New detection rules must be read-only and include references/remediation where applicable.

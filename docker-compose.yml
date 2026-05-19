@@ -1,0 +1,82 @@
+services:
+  temu:
+    build: .
+    image: sangkan-temu:local
+    volumes:
+      - ./results:/app/results
+      - ./rules:/app/rules
+      - ./dictionaries:/app/dictionaries:ro
+      - ./config:/app/config:ro
+      - ./templates:/app/templates:ro
+    command: ["--help"]
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["distributed", "benchmark"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temu-worker:
+    image: sangkan-temu:local
+    profiles: ["distributed"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./results:/app/results
+      - ./rules:/app/rules:ro
+      - ./dictionaries:/app/dictionaries:ro
+      - ./config:/app/config:ro
+      - ./templates:/app/templates:ro
+    command: ["worker", "--redis", "redis://redis:6379", "--ports", "80,443,8080"]
+
+  temu-coordinator:
+    image: sangkan-temu:local
+    profiles: ["distributed"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./results:/app/results
+      - ./benchmark:/app/benchmark:ro
+      - ./rules:/app/rules:ro
+      - ./dictionaries:/app/dictionaries:ro
+      - ./config:/app/config:ro
+      - ./templates:/app/templates:ro
+    command:
+      ["coordinator", "--redis", "redis://redis:6379", "--list", "/app/benchmark/targets.compose.txt"]
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    profiles: ["benchmark"]
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  webgoat:
+    image: webgoat/webgoat:latest
+    profiles: ["benchmark"]
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    profiles: ["benchmark"]
+    ports:
+      - "127.0.0.1:8082:80"
+
+  benchmark-nginx:
+    image: nginx:alpine
+    profiles: ["benchmark"]
+    ports:
+      - "127.0.0.1:8083:80"
+
+  benchmark-httpbin:
+    image: kennethreitz/httpbin:latest
+    profiles: ["benchmark"]
+    ports:
+      - "127.0.0.1:8084:80"

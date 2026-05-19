@@ -173,7 +173,7 @@ mod tests {
             rate_limit: 10,
             timeout_secs: 5,
             concurrency: 4,
-            user_agent: "Temu-Test/0.1.0".to_string(),
+            user_agent: "Temu-Test/1.0.0".to_string(),
             output_dir: tmp.path().join("results"),
             rules_dir: PathBuf::from("/tmp"),
             dictionaries_dir: PathBuf::from("/tmp"),

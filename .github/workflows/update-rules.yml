@@ -1,0 +1,86 @@
+name: Update Security Rules
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      rule_type:
+        description: "Rules to update"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - fingerprint
+          - vulnerability
+          - network
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Temu
+        uses: actions/checkout@v4
+
+      - name: Prepare upstream cache
+        run: |
+          mkdir -p rules/upstream/fingerprint rules/upstream/cve rules/upstream/network
+
+      - name: Fetch fingerprint sources
+        if: ${{ github.event_name == 'schedule' || inputs.rule_type == 'all' || inputs.rule_type == 'fingerprint' }}
+        run: |
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/AliasIO/wappalyzer/master/src/technologies.json \
+            --output rules/upstream/fingerprint/wappalyzer-technologies.json
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/0x727/FingerprintHub/master/指纹库/fingerprint.yml \
+            --output rules/upstream/fingerprint/fingerprinthub.yml
+
+      - name: Fetch recent CVE data
+        if: ${{ github.event_name == 'schedule' || inputs.rule_type == 'all' || inputs.rule_type == 'vulnerability' }}
+        run: |
+          START_DATE="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%S.000')"
+          END_DATE="$(date -u '+%Y-%m-%dT%H:%M:%S.000')"
+          curl --fail --silent --show-error --location \
+            "https://services.nvd.nist.gov/rest/json/cves/2.0/?lastModStartDate=${START_DATE}&lastModEndDate=${END_DATE}" \
+            --output rules/upstream/cve/recent.json
+
+      - name: Validate bundled rules
+        run: |
+          cargo test -p vulnerability loader::tests::test_workspace_cve_rules_load
+          cargo test -p fingerprint rules::tests::test_load_fingerprint_rules_valid
+          cargo test -p cli rules_update::tests
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate upstream YAML syntax
+        run: |
+          while IFS= read -r file; do
+            yq eval '.' "$file" > /dev/null
+          done < <(find rules/upstream -name "*.yaml" -o -name "*.yml")
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(rules): update upstream security rules"
+          title: "chore(rules): update upstream security rules"
+          body: |
+            Automated rules-as-code refresh.
+
+            Sources:
+            - Wappalyzer technologies
+            - FingerprintHub fingerprints
+            - NVD CVE API recent changes
+
+            Review the upstream cache before merging and promote validated entries into the first-party Temu rule format.
+          branch: automated/rules-update
+          delete-branch: true
