@@ -2149,11 +2149,15 @@ name = "verifier"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "regex",
+ "reqwest",
  "serde",
+ "tempfile",
  "temu_core",
  "tokio",
  "tracing",
  "vulnerability",
+ "wiremock",
 ]
 
 [[package]]

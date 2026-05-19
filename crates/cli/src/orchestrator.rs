@@ -7,6 +7,7 @@ use fuzzing::run_fuzzing;
 use reporter::types::{ScanResult, ScanStats};
 use temu_core::{AppConfig, Asset, AssetType, Target};
 use tracing::info;
+use verifier::run_verification;
 use vulnerability::run_vulnerability_scan;
 
 /// Runs the full scan pipeline against a target URL.
@@ -113,12 +114,13 @@ pub async fn run_scan(
 
     let all_techs: Vec<fingerprint::TechStack> = tech_stacks.values().flatten().cloned().collect();
 
-    let vulnerabilities = run_vulnerability_scan(&all_assets, &all_techs, config)
+    let detected_vulnerabilities = run_vulnerability_scan(&all_assets, &all_techs, config)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!("Vulnerability scan error (continuing): {e}");
             vec![]
         });
+    let vulnerabilities = run_verification(&detected_vulnerabilities, config).await;
     let vulns_found = vulnerabilities.len() as u32;
     eprintln!(
         "[+] Vulnerability: found {vulns_found} issue{}",

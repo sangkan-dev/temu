@@ -705,7 +705,7 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
 **Goal:** Verifikasi hasil vulnerability scan untuk mengurangi false positive.
 
 ### 9.1 Time-based Verification
-- [ ] 🔴 Fungsi `verify_time_based(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
+- [x] 🔴 Fungsi `verify_time_based(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
   ```rust
   pub enum VerifyResult {
       Confirmed { confidence: f32, proof: String },
@@ -718,35 +718,38 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
   - Ulangi 3 kali untuk konsistensi
   - Jika waktu payload - baseline > threshold → Confirmed
   - Jika fluktuasi besar → Inconclusive
-- [ ] 🟡 Support SLEEP payload adjustment: jika threshold 5s, coba 3s dan 7s juga
+- [x] 🟡 Support SLEEP payload adjustment: jika threshold 5s, coba 3s dan 7s juga
 
 ### 9.2 Reflection Verification
-- [ ] 🔴 Fungsi `verify_reflection(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
+- [x] 🔴 Fungsi `verify_reflection(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
   - Kirim unique random string sebagai payload (contoh: `temu_verify_abc123`)
   - Cek apakah string muncul di response body
   - Jika ya → reflection confirmed
   - Cek apakah string di-encode (HTML entity, URL encode) → tetap count
-- [ ] 🟡 Cek konteks reflection: apakah di dalam `<script>`, attribute, atau text node
+- [x] 🟡 Cek konteks reflection: apakah di dalam `<script>`, attribute, atau text node
 
 ### 9.3 General Verification
-- [ ] 🔴 Fungsi `verify_status_code(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
+- [x] 🔴 Fungsi `verify_status_code(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
   - Kirim ulang request yang sama → pastikan status code konsisten
-- [ ] 🟡 Fungsi `verify_header(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
+- [x] 🟡 Fungsi `verify_header(vuln: &Vulnerability, config: &AppConfig) -> VerifyResult`:
   - Cek apakah header yang mengindikasikan kerentanan masih ada
 
 ### 9.4 Verifier Orchestrator
-- [ ] 🔴 Fungsi publik `run_verification(vulns: &[Vulnerability], config: &AppConfig) -> Vec<Vulnerability>`:
+- [x] 🔴 Fungsi publik `run_verification(vulns: &[Vulnerability], config: &AppConfig) -> Vec<Vulnerability>`:
   - Untuk setiap vulnerability → pilih metode verifikasi berdasarkan `MatchType`
   - Update `verified` field
   - Hapus/tandai yang `FalsePositive`
   - Log: "Verified X/Y vulnerabilities, Z false positives removed"
-- [ ] 🔴 Integrasi ke scan pipeline (setelah vulnerability scan, sebelum report)
-- [ ] 🟢 Unit test: time-based vuln → verified, non-vuln → false positive
+- [x] 🔴 Integrasi ke scan pipeline (setelah vulnerability scan, sebelum report)
+- [x] 🟢 Unit test: time-based vuln → verified, non-vuln → false positive
 
-### 🏁 Sprint 9 — Definition of Done
-- Verifier mengurangi false positive secara signifikan
-- Time-based dan reflection verification berfungsi
-- Pipeline: vuln scan → verify → report
+### 🏁 Sprint 9 — Definition of Done ✅
+- Verifier mengurangi false positive secara signifikan ✅
+- Time-based dan reflection verification berfungsi ✅
+- Pipeline: vuln scan → verify → report ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo fmt --all --check` — formatted ✅
 
 ---
 
