@@ -976,31 +976,35 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
 **Goal:** Teknik deteksi yang lebih canggih.
 
 ### 15.1 Blind SQL Injection (Time-based)
-- [ ] 🔴 Rules: MySQL SLEEP, PostgreSQL pg_sleep, MSSQL WAITFOR DELAY
-- [ ] 🔴 Adaptive timing: baseline → payload → cek delta > threshold
-- [ ] 🟡 Support berbagai injection point: query param, header, cookie, POST body
+- [x] 🔴 Rules: MySQL SLEEP, PostgreSQL pg_sleep, MSSQL WAITFOR DELAY
+- [x] 🔴 Adaptive timing: baseline → payload → cek delta > threshold
+- [x] 🟡 Support berbagai injection point: query param, header, cookie, POST body
 
 ### 15.2 Server-Side Request Forgery (SSRF)
-- [ ] 🔴 Rules: redirect ke internal IP (127.0.0.1, 169.254.169.254)
-- [ ] 🟡 Cek apakah response berisi internal service data
+- [x] 🔴 Rules: redirect ke internal IP (127.0.0.1, 169.254.169.254)
+- [x] 🟡 Cek apakah response berisi internal service data
 
 ### 15.3 Path Traversal
-- [ ] 🔴 Rules: `../../etc/passwd`, `..\\windows\\system32\\drivers\\etc\\hosts`
-- [ ] 🔴 Encoding variations: URL encode, double encode, null byte
+- [x] 🔴 Rules: `../../etc/passwd`, `..\\windows\\system32\\drivers\\etc\\hosts`
+- [x] 🔴 Encoding variations: URL encode, double encode, null byte
 
 ### 15.4 Open Redirect
-- [ ] 🟡 Rules: redirect parameter → external domain
-- [ ] 🟡 Cek `Location` header di response
+- [x] 🟡 Rules: redirect parameter → external domain
+- [x] 🟡 Cek `Location` header di response
 
 ### 15.5 Security Header Analysis
-- [ ] 🔴 Cek missing headers: `X-Frame-Options`, `X-Content-Type-Options`, `Content-Security-Policy`, `Strict-Transport-Security`
-- [ ] 🔴 Report sebagai `Severity::Low` atau `Severity::Info`
-- [ ] 🟢 Rekomendasi spesifik untuk setiap missing header
+- [x] 🔴 Cek missing headers: `X-Frame-Options`, `X-Content-Type-Options`, `Content-Security-Policy`, `Strict-Transport-Security`
+- [x] 🔴 Report sebagai `Severity::Low` atau `Severity::Info`
+- [x] 🟢 Rekomendasi spesifik untuk setiap missing header
 
 ### 🏁 Sprint 15 — Definition of Done
-- Blind SQLi time-based detection berfungsi
-- SSRF, path traversal, open redirect rules tersedia
-- Security header analysis berjalan
+- Blind SQLi time-based detection berfungsi ✅
+- SSRF, path traversal, open redirect rules tersedia ✅
+- Security header analysis berjalan ✅
+- `cargo fmt --all --check` — formatted ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo build` — sukses ✅
 
 ---
 
