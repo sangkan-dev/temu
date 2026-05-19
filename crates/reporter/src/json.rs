@@ -57,6 +57,7 @@ mod tests {
             assets: vec![],
             tech_stacks: HashMap::new(),
             vulnerabilities: vec![],
+            target_summaries: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: ScanStats {

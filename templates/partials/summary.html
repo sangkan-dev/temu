@@ -15,4 +15,29 @@
     <div class="severity low"><span>Low</span><strong>{{ severity_counts.Low }}</strong></div>
     <div class="severity info"><span>Info</span><strong>{{ severity_counts.Info }}</strong></div>
   </div>
+  {% if target_summaries | length > 0 %}
+  <h3 style="margin-top: 18px;">Target Summary</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Target</th>
+        <th>Assets</th>
+        <th>Vulnerabilities</th>
+        <th>Highest Severity</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for target in target_summaries %}
+      <tr>
+        <td>{{ target.target }}</td>
+        <td>{{ target.assets_total }}</td>
+        <td>{{ target.vulnerabilities_total }}</td>
+        <td><span class="{{ target.highest_severity_class }}">{{ target.highest_severity }}</span></td>
+        <td>{{ target.duration_secs | round(method="ceil", precision=1) }}s</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </section>

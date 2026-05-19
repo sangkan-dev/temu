@@ -942,28 +942,32 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
 **Goal:** Support scanning multiple target dari file dan CIDR range.
 
 ### 14.1 File List Input
-- [ ] 🔴 CLI: `temu scan file --list targets.txt`
-- [ ] 🔴 Format file: satu URL per baris
-- [ ] 🔴 Implementasi: baca file → loop scan per target → aggregate results
-- [ ] 🟡 Progress: "Scanning target 3/10: example.com"
-- [ ] 🟢 Support komentar (`#`) di file list
+- [x] 🔴 CLI: `temu scan file --list targets.txt`
+- [x] 🔴 Format file: satu URL per baris
+- [x] 🔴 Implementasi: baca file → loop scan per target → aggregate results
+- [x] 🟡 Progress: "Scanning target 3/10: example.com"
+- [x] 🟢 Support komentar (`#`) di file list
 
 ### 14.2 CIDR Input
-- [ ] 🔴 CLI: `temu scan network --cidr 192.168.1.0/24`
-- [ ] 🔴 Parse CIDR → expand ke list IP
-- [ ] 🔴 Untuk setiap IP: port scan → HTTP probe → full scan jika web service ditemukan
-- [ ] 🟡 Skip RFC 1918 warning: "Scanning private network range"
-- [ ] 🟢 Limit: max 65536 IP per CIDR (warning jika lebih)
+- [x] 🔴 CLI: `temu scan network --cidr 192.168.1.0/24`
+- [x] 🔴 Parse CIDR → expand ke list IP
+- [x] 🔴 Untuk setiap IP: port scan → HTTP probe → full scan jika web service ditemukan
+- [x] 🟡 Skip RFC 1918 warning: "Scanning private network range"
+- [x] 🟢 Limit: max 65536 IP per CIDR (warning jika lebih)
 
 ### 14.3 Aggregated Report
-- [ ] 🔴 Jika multi-target: generate 1 report gabungan + 1 report per target
-- [ ] 🟡 Summary page: tabel semua target dengan jumlah vuln masing-masing
-- [ ] 🟢 Sorting: target dengan vuln terbanyak di atas
+- [x] 🔴 Jika multi-target: generate 1 report gabungan + 1 report per target
+- [x] 🟡 Summary page: tabel semua target dengan jumlah vuln masing-masing
+- [x] 🟢 Sorting: target dengan vuln terbanyak di atas
 
 ### 🏁 Sprint 14 — Definition of Done
-- Scan dari file list berjalan
-- Scan dari CIDR berjalan
-- Report gabungan ter-generate
+- Scan dari file list berjalan ✅
+- Scan dari CIDR berjalan ✅
+- Report gabungan ter-generate ✅
+- `cargo fmt --all --check` — formatted ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo build` — sukses ✅
 
 ---
 

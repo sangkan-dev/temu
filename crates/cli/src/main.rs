@@ -9,7 +9,7 @@ use anyhow::Context;
 use args::{Cli, Command, DiscoveryModeArg, ReportFormat, ScanCommand, WordlistSize};
 use clap::Parser;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
-use reporter::{generate_html, generate_json, generate_pdf};
+use reporter::{ScanResult, generate_html, generate_json, generate_pdf};
 use temu_core::init_logging;
 
 #[tokio::main]
@@ -88,19 +88,21 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                let report_path = generate_json(&result, &output_dir)
-                    .with_context(|| "Failed to write JSON report")?;
-                let html_path = generate_html(&result, &output_dir)
-                    .with_context(|| "Failed to write HTML report")?;
-                let pdf_path = generate_pdf(&result, &output_dir)
-                    .with_context(|| "Failed to write PDF report")?;
-
-                println!("{}", report_path.display());
-                println!("{}", html_path.display());
-                println!("{}", pdf_path.display());
+                print_report_paths(&write_report_set(&result, &output_dir)?);
             }
             ScanCommand::File { list } => {
-                eprintln!("[!] scan file --list {list:?} — not yet implemented");
+                let default_config_path = std::path::PathBuf::from("config/default.toml");
+                let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                let selected_ports = default_top_ports();
+                let result = orchestrator::run_file_scan(
+                    &list,
+                    &config,
+                    DiscoveryMode::Hybrid,
+                    &selected_ports,
+                )
+                .await
+                .with_context(|| "File list scan failed")?;
+                write_multi_target_reports(&result, &config.output_dir)?;
             }
             ScanCommand::Network { cidr, ports } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
@@ -110,18 +112,10 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
                     None => default_top_ports(),
                 };
-                let result = orchestrator::run_network_scan(&cidr, &config, &selected_ports)
+                let result = orchestrator::run_network_scan_multi(&cidr, &config, &selected_ports)
                     .await
                     .with_context(|| "Network scan failed")?;
-                let json_path = generate_json(&result, &config.output_dir)
-                    .with_context(|| "Failed to write JSON report")?;
-                let html_path = generate_html(&result, &config.output_dir)
-                    .with_context(|| "Failed to write HTML report")?;
-                let pdf_path = generate_pdf(&result, &config.output_dir)
-                    .with_context(|| "Failed to write PDF report")?;
-                println!("{}", json_path.display());
-                println!("{}", html_path.display());
-                println!("{}", pdf_path.display());
+                write_multi_target_reports(&result, &config.output_dir)?;
             }
         },
 
@@ -165,4 +159,34 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn write_multi_target_reports(
+    result: &orchestrator::MultiTargetScanResult,
+    output_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    for target in &result.targets {
+        print_report_paths(&write_report_set(target, output_dir)?);
+    }
+    print_report_paths(&write_report_set(&result.aggregate, output_dir)?);
+    Ok(())
+}
+
+fn write_report_set(
+    result: &ScanResult,
+    output_dir: &std::path::Path,
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    let json_path =
+        generate_json(result, output_dir).with_context(|| "Failed to write JSON report")?;
+    let html_path =
+        generate_html(result, output_dir).with_context(|| "Failed to write HTML report")?;
+    let pdf_path =
+        generate_pdf(result, output_dir).with_context(|| "Failed to write PDF report")?;
+    Ok(vec![json_path, html_path, pdf_path])
+}
+
+fn print_report_paths(paths: &[std::path::PathBuf]) {
+    for path in paths {
+        println!("{}", path.display());
+    }
 }

@@ -95,6 +95,7 @@ struct ReportView {
     risk_rating: String,
     stats: StatsView,
     severity_counts: BTreeMap<String, usize>,
+    target_summaries: Vec<TargetSummaryView>,
     vulnerabilities: Vec<VulnerabilityView>,
     assets: Vec<Asset>,
     tech_groups: Vec<TechGroupView>,
@@ -125,9 +126,42 @@ impl ReportView {
                 tech_total: result.tech_stacks.values().map(Vec::len).sum(),
             },
             severity_counts,
+            target_summaries: result
+                .target_summaries
+                .iter()
+                .map(TargetSummaryView::from_summary)
+                .collect(),
             vulnerabilities,
             assets: result.assets.clone(),
             tech_groups: tech_groups(result),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct TargetSummaryView {
+    target: String,
+    assets_total: usize,
+    vulnerabilities_total: usize,
+    highest_severity: String,
+    highest_severity_class: String,
+    duration_secs: f64,
+}
+
+impl TargetSummaryView {
+    fn from_summary(summary: &crate::types::TargetSummary) -> Self {
+        let highest_severity = summary
+            .highest_severity
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "None".to_string());
+        Self {
+            target: summary.target.clone(),
+            assets_total: summary.assets_total,
+            vulnerabilities_total: summary.vulnerabilities_total,
+            highest_severity_class: highest_severity.to_lowercase(),
+            highest_severity,
+            duration_secs: summary.duration_secs,
         }
     }
 }
@@ -283,6 +317,7 @@ mod tests {
                 "status=200",
                 "https://example.com/.env",
             )],
+            target_summaries: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: crate::types::ScanStats {

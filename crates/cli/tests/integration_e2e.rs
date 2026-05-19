@@ -189,6 +189,7 @@ fn test_scan_result_json_roundtrip() {
         assets: vec![Asset::new("https://example.com", AssetType::Url, "test")],
         tech_stacks: HashMap::new(),
         vulnerabilities: vec![],
+        target_summaries: vec![],
         scan_started_at: Utc::now(),
         scan_finished_at: Utc::now(),
         stats: reporter::ScanStats {

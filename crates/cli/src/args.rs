@@ -75,13 +75,13 @@ pub enum ScanCommand {
         #[arg(long)]
         ports: Option<String>,
     },
-    /// Scan a list of targets from a file (not yet implemented)
+    /// Scan a list of targets from a file
     File {
         /// Path to file containing target URLs (one per line)
         #[arg(long)]
         list: std::path::PathBuf,
     },
-    /// Scan an entire network CIDR (not yet implemented)
+    /// Scan an entire network CIDR
     Network {
         /// Network CIDR (e.g. 192.168.1.0/24)
         #[arg(long)]

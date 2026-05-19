@@ -231,6 +231,25 @@ impl PdfReport {
             false,
         );
 
+        if !result.target_summaries.is_empty() {
+            self.section_title(layer, "Target Summary", 82.0);
+            let mut target_y = 70.0;
+            for summary in result.target_summaries.iter().take(5) {
+                let severity = summary
+                    .highest_severity
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "None".to_string());
+                let line = format!(
+                    "{} | assets: {} | vulns: {} | highest: {}",
+                    summary.target, summary.assets_total, summary.vulnerabilities_total, severity
+                );
+                target_y = self.wrapped_text(layer, &line, 8.5, (24.0, target_y), 110, false);
+            }
+            self.footer(layer, self.page_number);
+            return;
+        }
+
         self.section_title(layer, "Recommended Priority", 76.0);
         for (line, y) in recommendation_lines(result)
             .iter()
@@ -644,6 +663,7 @@ mod tests {
             )],
             tech_stacks,
             vulnerabilities: vec![vulnerability],
+            target_summaries: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: crate::types::ScanStats {
