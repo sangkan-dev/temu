@@ -116,9 +116,18 @@ remediation: "Move .env outside web root"
 
     // ── Run scan ─────────────────────────────────────────────────────────────
     let base_url = mock_server.uri();
-    let result = cli::orchestrator::run_scan(&base_url, &config, DiscoveryMode::PassiveOnly)
-        .await
-        .expect("run_scan should not fail");
+    let mock_port = reqwest::Url::parse(&base_url)
+        .unwrap()
+        .port()
+        .expect("mock server URI must include a port");
+    let result = cli::orchestrator::run_scan_with_ports(
+        &base_url,
+        &config,
+        DiscoveryMode::PassiveOnly,
+        &[mock_port],
+    )
+    .await
+    .expect("run_scan should not fail");
 
     // ── Assertions ───────────────────────────────────────────────────────────
 
@@ -144,6 +153,15 @@ remediation: "Move .env outside web root"
     assert!(
         found_paths.iter().any(|p| p.contains("robots.txt")),
         "Expected /robots.txt in fuzz results, got: {found_paths:?}"
+    );
+
+    // Port scan: mock server port should be represented as a service asset
+    assert!(
+        result
+            .assets
+            .iter()
+            .any(|a| a.asset_type == AssetType::Service),
+        "Expected service asset from port scan"
     );
 
     // ScanResult serializes to valid JSON

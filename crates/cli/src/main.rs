@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use args::{Cli, Command, DiscoveryModeArg, ReportFormat, ScanCommand, WordlistSize};
 use clap::Parser;
-use discovery::DiscoveryMode;
+use discovery::{DiscoveryMode, default_top_ports, parse_ports};
 use reporter::{generate_html, generate_json};
 use temu_core::init_logging;
 
@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
                 config: config_path,
                 wordlist_size,
                 wordlist,
+                ports,
             } => {
                 // Validate URL early
                 reqwest::Url::parse(&url).with_context(|| format!("Invalid URL: {url}"))?;
@@ -71,9 +72,14 @@ async fn main() -> anyhow::Result<()> {
                     DiscoveryModeArg::Passive => DiscoveryMode::PassiveOnly,
                     DiscoveryModeArg::Hybrid => DiscoveryMode::Hybrid,
                 };
+                let selected_ports = match ports {
+                    Some(ports) => parse_ports(&ports)
+                        .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
+                    None => default_top_ports(),
+                };
 
                 let result = tokio::select! {
-                    res = orchestrator::run_scan(&url, &config, discovery_mode) => {
+                    res = orchestrator::run_scan_with_ports(&url, &config, discovery_mode, &selected_ports) => {
                         res?
                     }
                     _ = tokio::signal::ctrl_c() => {
@@ -93,8 +99,23 @@ async fn main() -> anyhow::Result<()> {
             ScanCommand::File { list } => {
                 eprintln!("[!] scan file --list {list:?} — not yet implemented");
             }
-            ScanCommand::Network { cidr } => {
-                eprintln!("[!] scan network --cidr {cidr} — not yet implemented");
+            ScanCommand::Network { cidr, ports } => {
+                let default_config_path = std::path::PathBuf::from("config/default.toml");
+                let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                let selected_ports = match ports {
+                    Some(ports) => parse_ports(&ports)
+                        .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
+                    None => default_top_ports(),
+                };
+                let result = orchestrator::run_network_scan(&cidr, &config, &selected_ports)
+                    .await
+                    .with_context(|| "Network scan failed")?;
+                let json_path = generate_json(&result, &config.output_dir)
+                    .with_context(|| "Failed to write JSON report")?;
+                let html_path = generate_html(&result, &config.output_dir)
+                    .with_context(|| "Failed to write HTML report")?;
+                println!("{}", json_path.display());
+                println!("{}", html_path.display());
             }
         },
 

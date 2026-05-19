@@ -818,7 +818,7 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
 **Goal:** Support scanning port terbuka dan banner grabbing.
 
 ### 11.1 Port Scanner
-- [ ] 🔴 Fungsi `scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<PortResult>`:
+- [x] 🔴 Fungsi `scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<PortResult>`:
   ```rust
   pub struct PortResult {
       pub port: u16,
@@ -830,29 +830,32 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
   - TCP connect scan menggunakan `tokio::net::TcpStream`
   - Timeout per port (default 3 detik)
   - Async dengan semaphore
-- [ ] 🔴 Default port list: top 100 most common ports
-- [ ] 🟡 CLI flag: `--ports 80,443,8080` atau `--ports 1-1024`
+- [x] 🔴 Default port list: top 100 most common ports
+- [x] 🟡 CLI flag: `--ports 80,443,8080` atau `--ports 1-1024`
 
 ### 11.2 Banner Grabbing
-- [ ] 🔴 Fungsi `grab_banner(ip: IpAddr, port: u16) -> Option<String>`:
+- [x] 🔴 Fungsi `grab_banner(ip: IpAddr, port: u16) -> Option<String>`:
   - Connect ke port, kirim probe bytes (atau tunggu banner)
   - Baca response bytes (timeout 5 detik)
   - Decode sebagai UTF-8 (lossy)
-- [ ] 🟡 Service identification dari banner:
+- [x] 🟡 Service identification dari banner:
   - SSH: `SSH-2.0-OpenSSH_8.x`
   - FTP: `220 ProFTPD`
   - SMTP: `220 mail.example.com ESMTP`
-- [ ] 🟢 Integrasi banner ke fingerprinting (OS detection dari SSH banner)
+- [x] 🟢 Integrasi banner ke fingerprinting (OS detection dari SSH banner)
 
 ### 11.3 Integrasi
-- [ ] 🔴 Tambahkan port scan ke pipeline setelah discovery
-- [ ] 🟡 Asset baru: `AssetType::Service` untuk setiap port terbuka
-- [ ] 🟢 Update JSON/HTML report dengan port scan results
+- [x] 🔴 Tambahkan port scan ke pipeline setelah discovery
+- [x] 🟡 Asset baru: `AssetType::Service` untuk setiap port terbuka
+- [x] 🟢 Update JSON/HTML report dengan port scan results
 
-### 🏁 Sprint 11 — Definition of Done
-- Port scanner menemukan port terbuka
-- Banner grabbing mendeteksi service
-- Hasil terintegrasi ke report
+### 🏁 Sprint 11 — Definition of Done ✅
+- Port scanner menemukan port terbuka ✅
+- Banner grabbing mendeteksi service ✅
+- Hasil terintegrasi ke report ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo fmt --all --check` — formatted ✅
 
 ---
 

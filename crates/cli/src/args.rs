@@ -70,6 +70,10 @@ pub enum ScanCommand {
         /// Custom wordlist file path (overrides --wordlist-size)
         #[arg(long)]
         wordlist: Option<std::path::PathBuf>,
+
+        /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
+        #[arg(long)]
+        ports: Option<String>,
     },
     /// Scan a list of targets from a file (not yet implemented)
     File {
@@ -82,6 +86,10 @@ pub enum ScanCommand {
         /// Network CIDR (e.g. 192.168.1.0/24)
         #[arg(long)]
         cidr: String,
+
+        /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
+        #[arg(long)]
+        ports: Option<String>,
     },
 }
 
@@ -168,6 +176,8 @@ mod tests {
             "single",
             "--url",
             "https://target.com",
+            "--ports",
+            "80,443,8080",
             "--mode",
             "passive",
             "--rate",
@@ -190,6 +200,7 @@ mod tests {
                         rate,
                         timeout,
                         output,
+                        ports,
                         ..
                     },
             } => {
@@ -198,6 +209,7 @@ mod tests {
                 assert_eq!(rate, Some(30));
                 assert_eq!(timeout, Some(15));
                 assert_eq!(output, Some(std::path::PathBuf::from("/tmp/results")));
+                assert_eq!(ports, Some("80,443,8080".to_string()));
             }
             _ => panic!("expected Scan::Single"),
         }
@@ -282,13 +294,22 @@ mod tests {
 
     #[test]
     fn test_scan_network_parses() {
-        let cli = Cli::try_parse_from(["temu", "scan", "network", "--cidr", "10.0.0.0/24"])
-            .expect("scan network must parse");
+        let cli = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "network",
+            "--cidr",
+            "10.0.0.0/24",
+            "--ports",
+            "22,80-81",
+        ])
+        .expect("scan network must parse");
         match cli.command {
             Command::Scan {
-                mode: ScanCommand::Network { cidr },
+                mode: ScanCommand::Network { cidr, ports },
             } => {
                 assert_eq!(cidr, "10.0.0.0/24");
+                assert_eq!(ports, Some("22,80-81".to_string()));
             }
             _ => panic!("expected Scan::Network"),
         }
