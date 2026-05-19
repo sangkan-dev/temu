@@ -1,13 +1,16 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use regex::Regex;
 use reqwest::Client;
 use tokio::sync::Semaphore;
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
-use temu_core::AppConfig;
+use temu_core::{AdaptiveRateLimiter, AppConfig, retry_delay};
+
+const MAX_RETRIES: u32 = 3;
 
 /// Result of an HTTP/HTTPS probe against a single host.
 #[derive(Debug, Clone)]
@@ -35,13 +38,24 @@ pub async fn probe_http(host: &str, timeout: Duration) -> Option<ProbeResult> {
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(5))
         .user_agent("Temu/0.1.0")
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(8)
         .build()
         .ok()?;
+    let limiter = AdaptiveRateLimiter::new(50);
 
+    probe_http_with_client(host, &client, &limiter).await
+}
+
+async fn probe_http_with_client(
+    host: &str,
+    client: &Client,
+    limiter: &AdaptiveRateLimiter,
+) -> Option<ProbeResult> {
     // Try HTTPS first, then HTTP
     for scheme in &["https", "http"] {
         let url = format!("{scheme}://{host}");
-        match client.get(&url).send().await {
+        match send_probe_request(client, limiter, &url, Some(host)).await {
             Ok(response) => {
                 let status_code = response.status().as_u16();
                 let redirect_url = response
@@ -80,20 +94,37 @@ pub async fn probe_http(host: &str, timeout: Duration) -> Option<ProbeResult> {
 /// `config.timeout_secs`. Marks duplicate redirect targets.
 pub async fn probe_all(hosts: &[String], config: &AppConfig) -> Vec<ProbeResult> {
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
-    let timeout = Duration::from_secs(config.timeout_secs);
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(config.timeout_secs))
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .user_agent(&config.user_agent)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(config.concurrency.max(1))
+        .build()
+    {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            warn!("Failed to build HTTP probe client: {e}");
+            return Vec::new();
+        }
+    };
+    let limiter = Arc::new(AdaptiveRateLimiter::new(config.rate_limit));
 
     let mut handles = Vec::with_capacity(hosts.len());
 
     for host in hosts {
         let host = host.clone();
         let sem = Arc::clone(&semaphore);
+        let client = Arc::clone(&client);
+        let limiter = Arc::clone(&limiter);
 
         let handle = tokio::spawn(async move {
             let Ok(_permit) = sem.acquire().await else {
                 warn!("HTTP probe skipped because semaphore is closed");
                 return None;
             };
-            probe_http(&host, timeout).await
+            probe_http_with_client(&host, &client, &limiter).await
         });
 
         handles.push(handle);
@@ -107,7 +138,60 @@ pub async fn probe_all(hosts: &[String], config: &AppConfig) -> Vec<ProbeResult>
     }
 
     mark_duplicates(&mut results);
+    let metrics = limiter.metrics().await;
+    debug!(
+        "HTTP probe resilience metrics: active={}, total={}, retries={}, reuse_rate={:.2}, rps={}",
+        metrics.active_connections,
+        metrics.total_requests,
+        metrics.retry_count,
+        metrics.reuse_rate,
+        metrics.current_rps
+    );
     results
+}
+
+async fn send_probe_request(
+    client: &Client,
+    limiter: &AdaptiveRateLimiter,
+    url: &str,
+    host: Option<&str>,
+) -> Result<reqwest::Response, reqwest::Error> {
+    for attempt in 0..=MAX_RETRIES {
+        limiter.before_request(host).await;
+        let started = Instant::now();
+        let result = client.get(url).send().await;
+        let elapsed = started.elapsed();
+        limiter.finish_request();
+
+        match result {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let should_pause = limiter.observe_response(Some(status), elapsed).await;
+                if status == 429 && attempt < MAX_RETRIES {
+                    limiter.record_retry();
+                    if should_pause {
+                        limiter.pause_for_throttling().await;
+                    } else {
+                        sleep(retry_delay(attempt + 1)).await;
+                    }
+                    continue;
+                }
+                return Ok(response);
+            }
+            Err(error) if is_transient_error(&error) && attempt < MAX_RETRIES => {
+                limiter.record_retry();
+                limiter.observe_response(None, elapsed).await;
+                sleep(retry_delay(attempt + 1)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    client.get(url).send().await
+}
+
+fn is_transient_error(error: &reqwest::Error) -> bool {
+    error.is_timeout() || error.is_connect() || error.is_request()
 }
 
 /// Marks `ProbeResult` entries as duplicates if more than one host redirected

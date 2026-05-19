@@ -414,6 +414,8 @@ fn build_client(config: &AppConfig) -> Result<Client, TemuError> {
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(3))
         .user_agent(&config.user_agent)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(config.concurrency.max(1))
         .build()
         .map_err(TemuError::from_network)
 }

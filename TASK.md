@@ -1053,28 +1053,32 @@ Tujuan: Performance tuning, distributed scanning, benchmarking.
 **Goal:** Scanner cerdas menyesuaikan kecepatan berdasarkan response target.
 
 ### 17.1 Adaptive Rate Limiting
-- [ ] 🔴 Deteksi throttling: jika response 429 atau response time naik > 3x baseline
-- [ ] 🔴 Implementasi exponential backoff:
+- [x] 🔴 Deteksi throttling: jika response 429 atau response time naik > 3x baseline
+- [x] 🔴 Implementasi exponential backoff:
   - Level 1: kurangi rate 50%
   - Level 2: kurangi rate 75%
   - Level 3: pause 30 detik, lalu retry
-- [ ] 🔴 Recovery: naikkan rate bertahap jika response normal kembali
-- [ ] 🟡 Log: "Rate adjusted: 50 rps → 25 rps (server throttling detected)"
+- [x] 🔴 Recovery: naikkan rate bertahap jika response normal kembali
+- [x] 🟡 Log: "Rate adjusted: 50 rps → 25 rps (server throttling detected)"
 
 ### 17.2 Connection Pooling
-- [ ] 🟡 Konfigurasi `reqwest::Client` connection pool optimal
-- [ ] 🟡 Reuse TCP connections ke host yang sama
-- [ ] 🟢 Metrics: jumlah connections aktif, reuse rate
+- [x] 🟡 Konfigurasi `reqwest::Client` connection pool optimal
+- [x] 🟡 Reuse TCP connections ke host yang sama
+- [x] 🟢 Metrics: jumlah connections aktif, reuse rate
 
 ### 17.3 Retry Logic
-- [ ] 🔴 Retry otomatis untuk network error (timeout, connection reset)
-- [ ] 🔴 Max retry: 3 kali per request
-- [ ] 🟡 Jitter: random delay antar retry (hindari thundering herd)
+- [x] 🔴 Retry otomatis untuk network error (timeout, connection reset)
+- [x] 🔴 Max retry: 3 kali per request
+- [x] 🟡 Jitter: random delay antar retry (hindari thundering herd)
 
 ### 🏁 Sprint 17 — Definition of Done
-- Rate limit adaptif berfungsi (backoff saat throttled)
-- Retry logic menangani transient failures
-- Scanner tidak meng-crash target
+- Rate limit adaptif berfungsi (backoff saat throttled) ✅
+- Retry logic menangani transient failures ✅
+- Scanner tidak meng-crash target ✅
+- `cargo fmt --all --check` — formatted ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo build` — sukses ✅
 
 ---
 

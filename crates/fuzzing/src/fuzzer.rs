@@ -1,26 +1,35 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::Client;
 use reqwest::Url;
 use tokio::sync::Semaphore;
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
-use temu_core::AppConfig;
+use temu_core::{AdaptiveRateLimiter, AppConfig, retry_delay};
 
 use crate::types::FuzzResult;
 
 const INTERESTING_STATUSES: &[u16] = &[200, 201, 204, 301, 302, 307, 308, 401, 403, 405, 500];
 const BASELINE_PATH: &str = "/temu_baseline_zxqwvnm987";
 const PARAMETER_PROBE_VALUE: &str = "test123";
+const MAX_RETRIES: u32 = 3;
 
 /// Sends a single GET request and returns the result, or `None` on network error.
-async fn probe_path(client: &Client, base_url: &str, path: &str) -> Option<FuzzResult> {
+async fn probe_path(
+    client: &Client,
+    limiter: &AdaptiveRateLimiter,
+    base_url: &str,
+    path: &str,
+) -> Option<FuzzResult> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     debug!("Fuzzing {url}");
 
-    let resp = client.get(&url).send().await.ok()?;
+    let parsed = Url::parse(&url).ok();
+    let host = parsed.as_ref().and_then(Url::host_str);
+    let resp = send_get_with_resilience(client, limiter, &url, host).await?;
 
     let status_code = resp.status().as_u16();
     let redirect_url = resp
@@ -47,13 +56,65 @@ async fn probe_path(client: &Client, base_url: &str, path: &str) -> Option<FuzzR
     })
 }
 
-async fn probe_url(client: &Client, url: Url) -> Option<(u16, u64, String)> {
+async fn probe_url(
+    client: &Client,
+    limiter: &AdaptiveRateLimiter,
+    url: Url,
+) -> Option<(u16, u64, String)> {
     debug!("Parameter fuzzing {url}");
-    let resp = client.get(url).send().await.ok()?;
+    let host = url.host_str().map(str::to_string);
+    let resp = send_get_with_resilience(client, limiter, url.as_str(), host.as_deref()).await?;
     let status_code = resp.status().as_u16();
     let body = resp.text().await.ok()?;
     let content_length = body.len() as u64;
     Some((status_code, content_length, body))
+}
+
+async fn send_get_with_resilience(
+    client: &Client,
+    limiter: &AdaptiveRateLimiter,
+    url: &str,
+    host: Option<&str>,
+) -> Option<reqwest::Response> {
+    for attempt in 0..=MAX_RETRIES {
+        limiter.before_request(host).await;
+        let started = Instant::now();
+        let result = client.get(url).send().await;
+        let elapsed = started.elapsed();
+        limiter.finish_request();
+
+        match result {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let should_pause = limiter.observe_response(Some(status), elapsed).await;
+                if status == 429 && attempt < MAX_RETRIES {
+                    limiter.record_retry();
+                    if should_pause {
+                        limiter.pause_for_throttling().await;
+                    } else {
+                        sleep(retry_delay(attempt + 1)).await;
+                    }
+                    continue;
+                }
+                return Some(response);
+            }
+            Err(error) if is_transient_error(&error) && attempt < MAX_RETRIES => {
+                limiter.record_retry();
+                limiter.observe_response(None, elapsed).await;
+                sleep(retry_delay(attempt + 1)).await;
+            }
+            Err(error) => {
+                warn!("Request failed after retries for {url}: {error}");
+                return None;
+            }
+        }
+    }
+
+    None
+}
+
+fn is_transient_error(error: &reqwest::Error) -> bool {
+    error.is_timeout() || error.is_connect() || error.is_request()
 }
 
 /// Sends requests to each path in `wordlist` against `base_url`.
@@ -72,6 +133,8 @@ pub async fn fuzz_paths(
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(&config.user_agent)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(config.concurrency.max(1))
         .build()
     {
         Ok(c) => c,
@@ -80,9 +143,10 @@ pub async fn fuzz_paths(
             return Vec::new();
         }
     };
+    let limiter = AdaptiveRateLimiter::new(config.rate_limit);
 
     // Establish baseline (custom 404 detection)
-    let baseline = probe_path(&client, base_url, BASELINE_PATH).await;
+    let baseline = probe_path(&client, &limiter, base_url, BASELINE_PATH).await;
     let (baseline_status, baseline_len) = match &baseline {
         Some(b) => (Some(b.status_code), Some(b.content_length)),
         None => (None, None),
@@ -90,6 +154,7 @@ pub async fn fuzz_paths(
 
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let client = Arc::new(client);
+    let limiter = Arc::new(limiter);
     let base_url = base_url.to_string();
 
     let mut handles = Vec::with_capacity(wordlist.len());
@@ -97,12 +162,13 @@ pub async fn fuzz_paths(
     for path in wordlist {
         let path = path.clone();
         let client = Arc::clone(&client);
+        let limiter = Arc::clone(&limiter);
         let base = base_url.clone();
         let sem = Arc::clone(&semaphore);
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok()?;
-            probe_path(&client, &base, &path).await
+            probe_path(&client, &limiter, &base, &path).await
         }));
     }
 
@@ -130,6 +196,16 @@ pub async fn fuzz_paths(
             results.push(result);
         }
     }
+
+    let metrics = limiter.metrics().await;
+    debug!(
+        "Fuzzing resilience metrics: active={}, total={}, retries={}, reuse_rate={:.2}, rps={}",
+        metrics.active_connections,
+        metrics.total_requests,
+        metrics.retry_count,
+        metrics.reuse_rate,
+        metrics.current_rps
+    );
 
     results
 }
@@ -193,6 +269,8 @@ pub async fn fuzz_parameters(
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(&config.user_agent)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(config.concurrency.max(1))
         .build()
     {
         Ok(c) => c,
@@ -201,6 +279,7 @@ pub async fn fuzz_parameters(
             return Vec::new();
         }
     };
+    let limiter = AdaptiveRateLimiter::new(config.rate_limit);
 
     let base_url = match Url::parse(url) {
         Ok(url) => url,
@@ -210,13 +289,15 @@ pub async fn fuzz_parameters(
         }
     };
 
-    let Some((baseline_status, baseline_len, _)) = probe_url(&client, base_url.clone()).await
+    let Some((baseline_status, baseline_len, _)) =
+        probe_url(&client, &limiter, base_url.clone()).await
     else {
         return Vec::new();
     };
 
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let client = Arc::new(client);
+    let limiter = Arc::new(limiter);
     let mut handles = Vec::with_capacity(wordlist.len());
 
     for parameter in wordlist {
@@ -226,11 +307,13 @@ pub async fn fuzz_parameters(
             .query_pairs_mut()
             .append_pair(&parameter, PARAMETER_PROBE_VALUE);
         let client = Arc::clone(&client);
+        let limiter = Arc::clone(&limiter);
         let sem = Arc::clone(&semaphore);
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok()?;
-            let (status_code, content_length, body) = probe_url(&client, probe.clone()).await?;
+            let (status_code, content_length, body) =
+                probe_url(&client, &limiter, probe.clone()).await?;
             let status_changed = status_code != baseline_status;
             let len_diff = content_length.abs_diff(baseline_len);
             let length_changed = if baseline_len == 0 {
@@ -261,6 +344,16 @@ pub async fn fuzz_parameters(
             results.push(result);
         }
     }
+
+    let metrics = limiter.metrics().await;
+    debug!(
+        "Parameter fuzzing resilience metrics: active={}, total={}, retries={}, reuse_rate={:.2}, rps={}",
+        metrics.active_connections,
+        metrics.total_requests,
+        metrics.retry_count,
+        metrics.reuse_rate,
+        metrics.current_rps
+    );
 
     results
 }
