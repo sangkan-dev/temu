@@ -21,6 +21,33 @@ pub struct MultiTargetScanResult {
     pub targets: Vec<ScanResult>,
 }
 
+#[derive(Debug, Default)]
+struct ErrorSummary {
+    errors: Vec<String>,
+}
+
+impl ErrorSummary {
+    fn push(&mut self, stage: &str, detail: impl std::fmt::Display) {
+        self.errors.push(format!("{stage}: {detail}"));
+    }
+
+    fn print(&self) {
+        if self.errors.is_empty() {
+            eprintln!("[+] Error summary: no recoverable errors");
+            return;
+        }
+
+        eprintln!(
+            "[!] Error summary: {} recoverable issue{}",
+            self.errors.len(),
+            if self.errors.len() == 1 { "" } else { "s" }
+        );
+        for error in &self.errors {
+            eprintln!("    - {error}");
+        }
+    }
+}
+
 /// Runs the full scan pipeline against a target URL.
 ///
 /// Pipeline steps:
@@ -46,6 +73,7 @@ pub async fn run_scan_with_ports(
     ports: &[u16],
 ) -> anyhow::Result<ScanResult> {
     let started_at = Utc::now();
+    let mut error_summary = ErrorSummary::default();
 
     let parsed =
         reqwest::Url::parse(url).map_err(|e| anyhow::anyhow!("Invalid URL '{url}': {e}"))?;
@@ -61,12 +89,14 @@ pub async fn run_scan_with_ports(
         Vec::new()
     } else {
         let target = Target::new(&domain);
-        run_discovery(&target, config, mode)
-            .await
-            .unwrap_or_else(|e| {
+        match run_discovery(&target, config, mode).await {
+            Ok(assets) => assets,
+            Err(e) => {
+                error_summary.push("discovery", &e);
                 tracing::warn!("Discovery error (continuing): {e}");
-                vec![]
-            })
+                Vec::new()
+            }
+        }
     };
     let subdomains_found = discovered
         .iter()
@@ -104,7 +134,10 @@ pub async fn run_scan_with_ports(
                     tech_stacks.insert(target_url.clone(), techs);
                 }
             }
-            Err(e) => tracing::warn!("Fingerprint error for {target_url}: {e}"),
+            Err(e) => {
+                error_summary.push("fingerprint", format!("{target_url}: {e}"));
+                tracing::warn!("Fingerprint error for {target_url}: {e}");
+            }
         }
     }
     for (service_url, tech) in service_techs {
@@ -126,10 +159,14 @@ pub async fn run_scan_with_ports(
     eprintln!("[+] Fingerprint: {}", tech_summary.join(", "));
 
     // ── 3. Fuzzing ───────────────────────────────────────────────────────────
-    let fuzzing_assets = run_fuzzing(url, config).await.unwrap_or_else(|e| {
-        tracing::warn!("Fuzzing error (continuing): {e}");
-        vec![]
-    });
+    let fuzzing_assets = match run_fuzzing(url, config).await {
+        Ok(assets) => assets,
+        Err(e) => {
+            error_summary.push("fuzzing", &e);
+            tracing::warn!("Fuzzing error (continuing): {e}");
+            Vec::new()
+        }
+    };
     let paths_found = fuzzing_assets
         .iter()
         .filter(|a| a.asset_type == AssetType::Path)
@@ -149,12 +186,15 @@ pub async fn run_scan_with_ports(
 
     let all_techs: Vec<fingerprint::TechStack> = tech_stacks.values().flatten().cloned().collect();
 
-    let detected_vulnerabilities = run_vulnerability_scan(&all_assets, &all_techs, config)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!("Vulnerability scan error (continuing): {e}");
-            vec![]
-        });
+    let detected_vulnerabilities =
+        match run_vulnerability_scan(&all_assets, &all_techs, config).await {
+            Ok(vulnerabilities) => vulnerabilities,
+            Err(e) => {
+                error_summary.push("vulnerability", &e);
+                tracing::warn!("Vulnerability scan error (continuing): {e}");
+                Vec::new()
+            }
+        };
     let vulnerabilities = run_verification(&detected_vulnerabilities, config).await;
     let vulns_found = vulnerabilities.len() as u32;
     eprintln!(
@@ -165,6 +205,7 @@ pub async fn run_scan_with_ports(
     let finished_at = Utc::now();
     let duration_secs = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
     eprintln!("[*] Scan completed in {duration_secs:.1}s");
+    error_summary.print();
 
     let mut all_discovered: Vec<Asset> = discovered;
     all_discovered.extend(fuzzing_assets);
@@ -227,7 +268,20 @@ pub async fn run_file_scan(
 
     for (index, target) in targets.iter().enumerate() {
         eprintln!("Scanning target {}/{}: {target}", index + 1, total);
-        results.push(run_scan_with_ports(target, config, mode.clone(), ports).await?);
+        match run_scan_with_ports(target, config, mode.clone(), ports).await {
+            Ok(result) => results.push(result),
+            Err(e) => {
+                tracing::warn!("Target scan failed for {target}: {e}");
+                eprintln!("[!] Target scan failed for {target}: {e}");
+            }
+        }
+    }
+
+    if results.is_empty() {
+        return Err(anyhow::anyhow!(
+            "All targets in {:?} failed to scan",
+            list_path
+        ));
     }
 
     let aggregate_target = format!("file:{}", list_path.display());
@@ -285,17 +339,29 @@ pub async fn run_network_scan_multi(
         }
 
         for web_url in web_urls {
-            let mut result =
-                run_scan_with_ports(&web_url, config, DiscoveryMode::PassiveOnly, &[]).await?;
-            result.assets.extend(service_assets.clone());
-            for (service_url, tech) in &service_techs {
-                result
-                    .tech_stacks
-                    .entry(service_url.clone())
-                    .or_default()
-                    .push(tech.clone());
+            match run_scan_with_ports(&web_url, config, DiscoveryMode::PassiveOnly, &[]).await {
+                Ok(mut result) => {
+                    result.assets.extend(service_assets.clone());
+                    for (service_url, tech) in &service_techs {
+                        result
+                            .tech_stacks
+                            .entry(service_url.clone())
+                            .or_default()
+                            .push(tech.clone());
+                    }
+                    per_target_results.push(result);
+                }
+                Err(e) => {
+                    tracing::warn!("Web service scan failed for {web_url}: {e}");
+                    eprintln!("[!] Web service scan failed for {web_url}: {e}");
+                    per_target_results.push(service_only_scan_result(
+                        &web_url,
+                        service_assets.clone(),
+                        service_techs.clone(),
+                        started_at,
+                    ));
+                }
             }
-            per_target_results.push(result);
         }
     }
 

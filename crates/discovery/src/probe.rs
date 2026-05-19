@@ -89,7 +89,10 @@ pub async fn probe_all(hosts: &[String], config: &AppConfig) -> Vec<ProbeResult>
         let sem = Arc::clone(&semaphore);
 
         let handle = tokio::spawn(async move {
-            let _permit = sem.acquire().await.expect("semaphore closed");
+            let Ok(_permit) = sem.acquire().await else {
+                warn!("HTTP probe skipped because semaphore is closed");
+                return None;
+            };
             probe_http(&host, timeout).await
         });
 
@@ -124,11 +127,11 @@ fn mark_duplicates(results: &mut [ProbeResult]) {
 
 /// Extracts the text content of the first `<title>` tag in `html`.
 fn extract_title(html: &str) -> Option<String> {
-    static TITLE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"(?i)<title[^>]*>([^<]+)</title>").expect("valid regex")
-    });
+    static TITLE_RE: std::sync::LazyLock<Option<Regex>> =
+        std::sync::LazyLock::new(|| Regex::new(r"(?i)<title[^>]*>([^<]+)</title>").ok());
 
     TITLE_RE
+        .as_ref()?
         .captures(html)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().trim().to_string())

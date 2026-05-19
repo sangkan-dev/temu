@@ -85,7 +85,10 @@ impl DnsResolver {
             let wildcard = wildcard_ips.clone();
 
             let handle = tokio::spawn(async move {
-                let _permit = sem.acquire().await.expect("semaphore closed");
+                let Ok(_permit) = sem.acquire().await else {
+                    warn!("DNS bruteforce worker skipped because semaphore is closed");
+                    return None;
+                };
 
                 if idx > 0 && idx % 100 == 0 {
                     debug!("DNS bruteforce progress: {idx} subdomains checked");

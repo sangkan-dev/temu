@@ -147,7 +147,9 @@ fn extract_meta_content(body: &str, meta_name: &str) -> Option<String> {
     );
 
     let re = {
-        let mut cache = META_CACHE.lock().unwrap();
+        let Ok(mut cache) = META_CACHE.lock() else {
+            return None;
+        };
         if !cache.contains_key(meta_name) {
             if let Ok(re) = Regex::new(&pattern) {
                 cache.insert(meta_name.to_string(), re);
@@ -155,7 +157,7 @@ fn extract_meta_content(body: &str, meta_name: &str) -> Option<String> {
                 return None;
             }
         }
-        cache.get(meta_name).unwrap().clone()
+        cache.get(meta_name).cloned()?
     };
 
     re.captures(body).and_then(|c| {

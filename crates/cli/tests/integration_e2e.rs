@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use discovery::DiscoveryMode;
 use reporter::{ScanResult, generate_json};
@@ -19,6 +20,18 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         max_recursion_depth: 2,
         wordlist_override: None,
     }
+}
+
+fn make_minimal_dirs(tmp: &tempfile::TempDir) -> (PathBuf, PathBuf, PathBuf) {
+    let dict_dir = tmp.path().join("dictionaries");
+    std::fs::create_dir_all(&dict_dir).unwrap();
+    std::fs::write(dict_dir.join("paths-small.txt"), "/health\n").unwrap();
+    std::fs::write(dict_dir.join("parameters-small.txt"), "q\n").unwrap();
+
+    let rules_dir = tmp.path().join("rules");
+    std::fs::create_dir_all(&rules_dir).unwrap();
+    let output_dir = tmp.path().join("results");
+    (dict_dir, rules_dir, output_dir)
 }
 
 /// Full pipeline integration test against a local wiremock server.
@@ -206,4 +219,108 @@ fn test_scan_result_json_roundtrip() {
     assert_eq!(back.target, result.target);
     assert_eq!(back.stats.paths_found, 3);
     assert_eq!(back.stats.vulns_found, 1);
+}
+
+#[tokio::test]
+async fn test_file_scan_pipeline_generates_aggregate_result() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<title>OK</title>"))
+        .mount(&mock_server)
+        .await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (dict_dir, rules_dir, output_dir) = make_minimal_dirs(&tmp);
+    let config = make_config(dict_dir, rules_dir, output_dir);
+    let list_path = tmp.path().join("targets.txt");
+    std::fs::write(
+        &list_path,
+        format!(
+            "# local targets\n{}\n{}\n",
+            mock_server.uri(),
+            mock_server.uri()
+        ),
+    )
+    .unwrap();
+
+    let result =
+        cli::orchestrator::run_file_scan(&list_path, &config, DiscoveryMode::PassiveOnly, &[])
+            .await
+            .expect("file scan should complete");
+
+    assert_eq!(result.targets.len(), 2);
+    assert_eq!(result.aggregate.target_summaries.len(), 2);
+    assert!(result.aggregate.target.starts_with("file:"));
+}
+
+#[tokio::test]
+async fn test_network_scan_pipeline_scans_discovered_web_service() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<title>Network OK</title>"))
+        .mount(&mock_server)
+        .await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (dict_dir, rules_dir, output_dir) = make_minimal_dirs(&tmp);
+    let config = make_config(dict_dir, rules_dir, output_dir);
+    let mock_port = reqwest::Url::parse(&mock_server.uri())
+        .unwrap()
+        .port()
+        .expect("mock server URI must include a port");
+
+    let result = cli::orchestrator::run_network_scan_multi("127.0.0.1/32", &config, &[mock_port])
+        .await
+        .expect("network scan should complete");
+
+    assert!(!result.targets.is_empty());
+    assert!(result.aggregate.target.starts_with("network:"));
+    assert!(
+        result
+            .aggregate
+            .assets
+            .iter()
+            .any(|asset| asset.asset_type == AssetType::Service)
+    );
+}
+
+#[test]
+fn test_benchmark_100_url_aggregation_records_time_and_size() {
+    use chrono::Utc;
+
+    let started = Instant::now();
+    let scan_started_at = Utc::now();
+    let results = (0..100)
+        .map(|index| ScanResult {
+            target: format!("https://target-{index}.example"),
+            assets: vec![Asset::new(
+                format!("https://target-{index}.example"),
+                AssetType::Url,
+                "benchmark",
+            )],
+            tech_stacks: HashMap::new(),
+            vulnerabilities: Vec::new(),
+            target_summaries: Vec::new(),
+            scan_started_at,
+            scan_finished_at: scan_started_at,
+            stats: reporter::ScanStats {
+                subdomains_found: 0,
+                paths_found: 0,
+                parameters_found: 0,
+                vulns_found: 0,
+                duration_secs: 0.0,
+            },
+        })
+        .collect::<Vec<_>>();
+
+    let aggregate = cli::orchestrator::aggregate_scan_results("benchmark:100-urls", &results);
+    let elapsed = started.elapsed();
+    let report_bytes = serde_json::to_vec(&aggregate).unwrap().len();
+
+    assert_eq!(aggregate.target_summaries.len(), 100);
+    assert!(elapsed.as_secs_f64() < 1.0, "aggregation took {elapsed:?}");
+    assert!(
+        report_bytes > 1_000,
+        "benchmark report should have measurable size"
+    );
 }
