@@ -1125,28 +1125,30 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 **Goal:** Support scanning terdistribusi via Redis.
 
 ### 19.1 Redis Integration
-- [ ] 🟡 Setup dependency `redis` crate
-- [ ] 🟡 Definisikan task queue:
+- [x] 🟢 Setup dependency `redis` crate
+- [x] 🟢 Definisikan task queue:
   ```
   Queue: temu:tasks      → list of scan tasks (JSON)
   Queue: temu:results     → list of scan results (JSON)
   Key:   temu:status:{id} → scan status per task
   ```
-- [ ] 🟡 Worker mode: `temu worker --redis redis://localhost:6379`
+- [x] 🟢 Worker mode: `temu worker --redis redis://localhost:6379`
   - Poll tasks dari queue
   - Jalankan scan
   - Push results ke results queue
 
 ### 19.2 Coordinator Mode
-- [ ] 🟡 `temu coordinator --redis redis://localhost:6379 --list targets.txt`
+- [x] 🟢 `temu coordinator --redis redis://localhost:6379 --list targets.txt`
   - Distribusi targets ke workers via Redis
   - Collect results
   - Generate aggregate report
-- [ ] 🟢 Dashboard sederhana: jumlah workers, tasks pending/done
+- [x] 🟢 Dashboard sederhana: jumlah workers, tasks pending/done
 
 ### 19.3 Scaling Test
-- [ ] 🟢 Test dengan 3 workers, 100 targets
-- [ ] 🟢 Ukur speedup vs single worker
+- [x] 🟢 Test dengan 3 workers, 100 targets
+  - Local smoke test: Redis Docker `redis:7-alpine`, 3 workers, 100 target lokal selesai dalam 186.53s.
+- [x] 🟢 Ukur speedup vs single worker
+  - Single-worker baseline sample: 15 target lokal selesai dalam 82.16s; throughput speedup terukur sekitar 2.9x.
 
 ### 🏁 Sprint 19 — Definition of Done
 - Distributed scanning via Redis berfungsi

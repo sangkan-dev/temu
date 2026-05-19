@@ -23,6 +23,30 @@ pub enum Command {
         #[command(subcommand)]
         mode: ScanCommand,
     },
+    /// Run a distributed scan worker
+    Worker {
+        /// Redis connection URL
+        #[arg(long)]
+        redis: String,
+
+        /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
+        #[arg(long)]
+        ports: Option<String>,
+
+        /// Process one task and exit
+        #[arg(long)]
+        once: bool,
+    },
+    /// Coordinate a distributed scan
+    Coordinator {
+        /// Redis connection URL
+        #[arg(long)]
+        redis: String,
+
+        /// Path to file containing target URLs (one per line)
+        #[arg(long)]
+        list: std::path::PathBuf,
+    },
     /// Generate a report from a previous scan result
     Report {
         #[command(subcommand)]
@@ -479,6 +503,48 @@ mod tests {
                 assert!(matches!(wordlist_size, WordlistSize::Small)); // default unchanged
             }
             _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_worker_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "worker",
+            "--redis",
+            "redis://localhost:6379",
+            "--ports",
+            "80",
+            "--once",
+        ])
+        .expect("worker must parse");
+        match cli.command {
+            Command::Worker { redis, ports, once } => {
+                assert_eq!(redis, "redis://localhost:6379");
+                assert_eq!(ports, Some("80".to_string()));
+                assert!(once);
+            }
+            _ => panic!("expected Worker"),
+        }
+    }
+
+    #[test]
+    fn test_coordinator_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "coordinator",
+            "--redis",
+            "redis://localhost:6379",
+            "--list",
+            "targets.txt",
+        ])
+        .expect("coordinator must parse");
+        match cli.command {
+            Command::Coordinator { redis, list } => {
+                assert_eq!(redis, "redis://localhost:6379");
+                assert_eq!(list, std::path::PathBuf::from("targets.txt"));
+            }
+            _ => panic!("expected Coordinator"),
         }
     }
 }

@@ -1,6 +1,7 @@
 // CLI crate — entrypoint, argument parsing, scan orchestration
 
 mod args;
+use cli::distributed;
 use cli::orchestrator;
 
 use std::path::PathBuf;
@@ -118,6 +119,28 @@ async fn main() -> anyhow::Result<()> {
                 write_multi_target_reports(&result, &config.output_dir)?;
             }
         },
+
+        Command::Worker { redis, ports, once } => {
+            let default_config_path = std::path::PathBuf::from("config/default.toml");
+            let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+            let selected_ports = match ports {
+                Some(ports) => parse_ports(&ports)
+                    .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
+                None => default_top_ports(),
+            };
+            distributed::run_worker_with_ports(&redis, &config, once, &selected_ports)
+                .await
+                .with_context(|| "Distributed worker failed")?;
+        }
+
+        Command::Coordinator { redis, list } => {
+            let result = distributed::run_coordinator_default(&redis, &list)
+                .await
+                .with_context(|| "Distributed coordinator failed")?;
+            let default_config_path = std::path::PathBuf::from("config/default.toml");
+            let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+            write_multi_target_reports(&result, &config.output_dir)?;
+        }
 
         Command::Report { mode: report_cmd } => {
             use args::ReportCommand;
