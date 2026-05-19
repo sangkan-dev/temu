@@ -758,8 +758,8 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
 **Goal:** Laporan HTML interaktif yang bisa diaudit.
 
 ### 10.1 Tera Template Setup
-- [ ] 🔴 Setup dependency `tera` di reporter crate
-- [ ] 🔴 Buat folder `templates/` dengan:
+- [x] 🔴 Setup dependency `tera` di reporter crate
+- [x] 🔴 Buat folder `templates/` dengan:
   - `templates/report.html` — main template
   - `templates/partials/header.html`
   - `templates/partials/summary.html`
@@ -769,37 +769,40 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
   - `templates/partials/footer.html`
 
 ### 10.2 HTML Template Design
-- [ ] 🔴 Header section:
+- [x] 🔴 Header section:
   - Logo/nama scanner, tanggal scan, target domain
   - Durasi scan, total requests
-- [ ] 🔴 Executive summary:
+- [x] 🔴 Executive summary:
   - Pie chart/bar (CSS-only) jumlah vuln per severity
   - Total: X Critical, Y High, Z Medium, W Low
   - Risk rating keseluruhan
-- [ ] 🔴 Vulnerability table:
+- [x] 🔴 Vulnerability table:
   - Sortable by severity, name, URL
   - Kolom: ID, Name, Severity (color-coded), URL, Parameter, CVSS, Verified, Proof
   - Detail expandable per vulnerability
-- [ ] 🟡 Assets table:
+- [x] 🟡 Assets table:
   - List semua subdomain/path ditemukan
   - Status code, technology detected
-- [ ] 🟡 Tech stack overview:
+- [x] 🟡 Tech stack overview:
   - Group by category (Web Server, Framework, CMS, dll)
-- [ ] 🟢 Remediation recommendations per vulnerability type
-- [ ] 🔴 Self-contained HTML: semua CSS inline (tidak perlu external file)
+- [x] 🟢 Remediation recommendations per vulnerability type
+- [x] 🔴 Self-contained HTML: semua CSS inline (tidak perlu external file)
 
 ### 10.3 Generate Function
-- [ ] 🔴 Fungsi `generate_html(result: &ScanResult, output_dir: &Path) -> Result<PathBuf>`:
+- [x] 🔴 Fungsi `generate_html(result: &ScanResult, output_dir: &Path) -> Result<PathBuf>`:
   - Render template dengan data dari `ScanResult`
   - Nama file: `{date}_{domain}.html`
-- [ ] 🔴 Integrasi ke CLI: `temu report generate --format html --input results.json`
-- [ ] 🔴 Otomatis generate HTML setelah scan selesai (selain JSON)
-- [ ] 🟢 Unit test: generate HTML, validasi tidak ada template error
+- [x] 🔴 Integrasi ke CLI: `temu report generate --format html --input results.json`
+- [x] 🔴 Otomatis generate HTML setelah scan selesai (selain JSON)
+- [x] 🟢 Unit test: generate HTML, validasi tidak ada template error
 
-### 🏁 Sprint 10 — Definition of Done
-- HTML report ter-generate otomatis setelah scan
-- Report berisi semua informasi: summary, vulns, assets, tech stack
-- Self-contained (bisa dibuka tanpa internet)
+### 🏁 Sprint 10 — Definition of Done ✅
+- HTML report ter-generate otomatis setelah scan ✅
+- Report berisi semua informasi: summary, vulns, assets, tech stack ✅
+- Self-contained (bisa dibuka tanpa internet) ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo fmt --all --check` — formatted ✅
 - **Fase 2 selesai ✅**
 
 ---

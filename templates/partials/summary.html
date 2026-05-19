@@ -1,0 +1,18 @@
+<section>
+  <h2>Executive Summary</h2>
+  <div class="metrics">
+    <div class="metric"><span>Total Assets</span><strong>{{ stats.assets_total }}</strong></div>
+    <div class="metric"><span>Subdomains</span><strong>{{ stats.subdomains_found }}</strong></div>
+    <div class="metric"><span>Paths</span><strong>{{ stats.paths_found }}</strong></div>
+    <div class="metric"><span>Parameters</span><strong>{{ stats.parameters_found }}</strong></div>
+    <div class="metric"><span>Vulnerabilities</span><strong>{{ stats.vulns_found }}</strong></div>
+    <div class="metric"><span>Technologies</span><strong>{{ stats.tech_total }}</strong></div>
+  </div>
+  <div class="severity-bar">
+    <div class="severity critical"><span>Critical</span><strong>{{ severity_counts.Critical }}</strong></div>
+    <div class="severity high"><span>High</span><strong>{{ severity_counts.High }}</strong></div>
+    <div class="severity medium"><span>Medium</span><strong>{{ severity_counts.Medium }}</strong></div>
+    <div class="severity low"><span>Low</span><strong>{{ severity_counts.Low }}</strong></div>
+    <div class="severity info"><span>Info</span><strong>{{ severity_counts.Info }}</strong></div>
+  </div>
+</section>

@@ -1,0 +1,18 @@
+<section>
+  <h2>Technology Stack</h2>
+  <div class="tech-grid">
+    {% for group in tech_groups %}
+    <div class="tech-group">
+      <h3>{{ group.category }}</h3>
+      {% for tech in group.technologies %}
+      <div class="tech-item">
+        <strong>{{ tech.name }}</strong>
+        <span class="subtle">version {{ tech.version }} · {{ tech.confidence }} · {{ tech.url }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p>No technologies reported.</p>
+    {% endfor %}
+  </div>
+</section>

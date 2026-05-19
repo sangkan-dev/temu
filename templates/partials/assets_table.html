@@ -1,0 +1,25 @@
+<section>
+  <h2>Assets</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>URL</th>
+        <th>Discovered By</th>
+        <th>Discovered At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for asset in assets %}
+      <tr>
+        <td>{{ asset.asset_type }}</td>
+        <td>{{ asset.url }}</td>
+        <td>{{ asset.discovered_by }}</td>
+        <td>{{ asset.discovered_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No assets reported.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

@@ -1,0 +1,38 @@
+<section>
+  <h2>Vulnerabilities</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Severity</th>
+        <th>URL</th>
+        <th>Parameter</th>
+        <th>CVSS</th>
+        <th>Verified</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for vuln in vulnerabilities %}
+      <tr>
+        <td>{{ vuln.id }}</td>
+        <td>
+          {{ vuln.name }}
+          <details>
+            <summary>Evidence and remediation</summary>
+            <p>{{ vuln.proof }}</p>
+            <p class="subtle">{{ vuln.remediation }}</p>
+          </details>
+        </td>
+        <td><span class="badge {{ vuln.severity_class }}">{{ vuln.severity }}</span></td>
+        <td>{{ vuln.url }}</td>
+        <td>{{ vuln.parameter }}</td>
+        <td>{{ vuln.cvss_score }}</td>
+        <td>{% if vuln.verified %}<span class="verified">Yes</span>{% else %}No{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No vulnerabilities reported.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

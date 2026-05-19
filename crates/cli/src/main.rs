@@ -6,10 +6,10 @@ use cli::orchestrator;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use args::{Cli, Command, DiscoveryModeArg, ScanCommand, WordlistSize};
+use args::{Cli, Command, DiscoveryModeArg, ReportFormat, ScanCommand, WordlistSize};
 use clap::Parser;
 use discovery::DiscoveryMode;
-use reporter::generate_json;
+use reporter::{generate_html, generate_json};
 use temu_core::init_logging;
 
 #[tokio::main]
@@ -84,8 +84,11 @@ async fn main() -> anyhow::Result<()> {
 
                 let report_path = generate_json(&result, &output_dir)
                     .with_context(|| "Failed to write JSON report")?;
+                let html_path = generate_html(&result, &output_dir)
+                    .with_context(|| "Failed to write HTML report")?;
 
                 println!("{}", report_path.display());
+                println!("{}", html_path.display());
             }
             ScanCommand::File { list } => {
                 eprintln!("[!] scan file --list {list:?} — not yet implemented");
@@ -98,15 +101,18 @@ async fn main() -> anyhow::Result<()> {
         Command::Report { mode: report_cmd } => {
             use args::ReportCommand;
             match report_cmd {
-                ReportCommand::Generate { format: _, input } => {
-                    // Re-load existing ScanResult and re-write JSON (idempotent for now)
+                ReportCommand::Generate { format, input } => {
                     let content = std::fs::read_to_string(&input)
                         .with_context(|| format!("Cannot read {input:?}"))?;
                     let result: reporter::ScanResult = serde_json::from_str(&content)
                         .with_context(|| "Failed to parse input as ScanResult JSON")?;
                     let dir = input.parent().unwrap_or(&PathBuf::from(".")).to_path_buf();
-                    let path =
-                        generate_json(&result, &dir).with_context(|| "Failed to write report")?;
+                    let path = match format {
+                        ReportFormat::Json => generate_json(&result, &dir)
+                            .with_context(|| "Failed to write JSON report")?,
+                        ReportFormat::Html => generate_html(&result, &dir)
+                            .with_context(|| "Failed to write HTML report")?,
+                    };
                     println!("{}", path.display());
                 }
             }

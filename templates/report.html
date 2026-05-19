@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temu Security Report</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1b1f24;
+      --muted: #626a73;
+      --line: #d9dee5;
+      --accent: #0f766e;
+      --critical: #9f1239;
+      --high: #b45309;
+      --medium: #7c3aed;
+      --low: #0369a1;
+      --info: #475569;
+      --ok: #15803d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header, main, footer { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 32px 0 20px; }
+    h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: 0; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; margin-bottom: 12px; }
+    h3 { font-size: 15px; margin-bottom: 8px; }
+    p { margin: 0; }
+    .target { margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px; color: var(--muted); }
+    section { margin: 18px 0; padding: 18px 0; border-top: 1px solid var(--line); }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 78px;
+    }
+    .metric span { display: block; color: var(--muted); font-size: 12px; }
+    .metric strong { display: block; margin-top: 6px; font-size: 22px; }
+    .severity-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+    .severity {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 10px;
+    }
+    .severity strong { display: block; font-size: 18px; }
+    .critical { color: var(--critical); }
+    .high { color: var(--high); }
+    .medium { color: var(--medium); }
+    .low { color: var(--low); }
+    .info { color: var(--info); }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+    td { overflow-wrap: anywhere; }
+    .badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-weight: 700; border: 1px solid currentColor; }
+    .verified { color: var(--ok); font-weight: 700; }
+    details { margin-top: 6px; }
+    summary { cursor: pointer; color: var(--accent); }
+    .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .tech-group { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+    .tech-item { padding: 8px 0; border-top: 1px solid var(--line); }
+    .tech-item:first-of-type { border-top: 0; }
+    .subtle { color: var(--muted); font-size: 12px; }
+    footer { color: var(--muted); padding: 24px 0 36px; border-top: 1px solid var(--line); }
+    @media (max-width: 720px) {
+      header, main, footer { width: min(100% - 20px, 1180px); }
+      .severity-bar { grid-template-columns: 1fr 1fr; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  {% include "partials/header.html" %}
+  <main>
+    {% include "partials/summary.html" %}
+    {% include "partials/vulns_table.html" %}
+    {% include "partials/assets_table.html" %}
+    {% include "partials/tech_stack.html" %}
+  </main>
+  {% include "partials/footer.html" %}
+</body>
+</html>

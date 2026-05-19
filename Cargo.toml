@@ -31,3 +31,4 @@ wiremock = "0.6"
 tempfile = "3"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+tera = "1"
