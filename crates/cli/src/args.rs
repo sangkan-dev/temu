@@ -101,8 +101,12 @@ pub enum ReportCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CveCommand {
-    /// Update CVE database (not yet implemented)
-    Update,
+    /// Update CVE database cache
+    Update {
+        /// CPE name to refresh from NVD. Can be passed multiple times.
+        #[arg(long)]
+        cpe: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -311,9 +315,29 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Cve {
-                mode: CveCommand::Update
+                mode: CveCommand::Update { .. }
             }
         ));
+    }
+
+    #[test]
+    fn test_cve_update_with_cpe_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "cve",
+            "update",
+            "--cpe",
+            "cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*",
+        ])
+        .expect("cve update --cpe must parse");
+        match cli.command {
+            Command::Cve {
+                mode: CveCommand::Update { cpe },
+            } => {
+                assert_eq!(cpe, vec!["cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*"]);
+            }
+            _ => panic!("expected Cve::Update"),
+        }
     }
 
     #[test]

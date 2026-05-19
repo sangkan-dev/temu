@@ -7,6 +7,13 @@ edition = "2024"
 temu_core = { path = "../core" }
 fingerprint = { path = "../fingerprint" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }
+tempfile = "3"

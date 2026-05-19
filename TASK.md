@@ -632,8 +632,8 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
 **Goal:** Bisa query CVE berdasarkan teknologi yang terdeteksi, dengan cache lokal.
 
 ### 8.1 SQLite Setup
-- [ ] 🔴 Setup dependency `rusqlite` di cve_client crate
-- [ ] 🔴 Schema database:
+- [x] 🔴 Setup dependency `rusqlite` di cve_client crate
+- [x] 🔴 Schema database:
   ```sql
   CREATE TABLE cve_entries (
       cve_id TEXT PRIMARY KEY,
@@ -651,49 +651,52 @@ Tujuan: Memperkuat setiap modul, tambah CT logs, Wappalyzer rules, parameter fuz
   CREATE INDEX idx_cpe ON cve_entries(cpe_match);
   CREATE INDEX idx_severity ON cve_entries(severity);
   ```
-- [ ] 🔴 Fungsi `init_database(path: &Path) -> Result<Connection>`
-- [ ] 🟢 Unit test: create, insert, query
+- [x] 🔴 Fungsi `init_database(path: &Path) -> Result<Connection>`
+- [x] 🟢 Unit test: create, insert, query
 
 ### 8.2 NVD API Client
-- [ ] 🔴 Fungsi `fetch_cves_from_nvd(cpe: &str, api_key: Option<&str>) -> Result<Vec<CveEntry>>`:
+- [x] 🔴 Fungsi `fetch_cves_from_nvd(cpe: &str, api_key: Option<&str>) -> Result<Vec<CveEntry>>`:
   - HTTP GET ke `https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName={cpe}`
   - Parse response JSON → `Vec<CveEntry>`
   - Handle pagination (NVD returns max 2000 per request)
   - Handle rate limit (tanpa API key: 5 req/30s, dengan key: 50 req/30s)
-- [ ] 🟡 Retry logic: exponential backoff untuk 503/429
-- [ ] 🟢 Unit test: mock NVD response
+- [x] 🟡 Retry logic: exponential backoff untuk 503/429
+- [x] 🟢 Unit test: mock NVD response
 
 ### 8.3 CPE Builder
-- [ ] 🔴 Fungsi `build_cpe(tech: &TechStack) -> Option<String>`:
+- [x] 🔴 Fungsi `build_cpe(tech: &TechStack) -> Option<String>`:
   - Map nama teknologi ke CPE vendor/product
   - Contoh: `nginx` + `1.18.0` → `cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*`
   - Gunakan lookup table untuk mapping yang benar
-- [ ] 🟡 Lookup table untuk 50 teknologi paling umum
-- [ ] 🟢 Unit test: mapping benar untuk nginx, Apache, PHP, WordPress, dll
+- [x] 🟡 Lookup table untuk 50 teknologi paling umum
+- [x] 🟢 Unit test: mapping benar untuk nginx, Apache, PHP, WordPress, dll
 
 ### 8.4 CISA KEV Integration
-- [ ] 🟡 Fungsi `fetch_cisa_kev() -> Result<Vec<String>>`:
+- [x] 🟡 Fungsi `fetch_cisa_kev() -> Result<Vec<String>>`:
   - Download `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
   - Parse → list CVE IDs yang sedang actively exploited
-- [ ] 🟡 Tandai CVE di database yang ada di KEV list → `exploitability = 'known_exploited'`
-- [ ] 🟢 Cache KEV list (expire 24 jam)
+- [x] 🟡 Tandai CVE di database yang ada di KEV list → `exploitability = 'known_exploited'`
+- [x] 🟢 Cache KEV list (expire 24 jam)
 
 ### 8.5 CVE Query & Orchestrator
-- [ ] 🔴 Fungsi publik `check_cves(tech_stacks: &[TechStack], config: &AppConfig) -> Vec<Vulnerability>`:
+- [x] 🔴 Fungsi publik `check_cves(tech_stacks: &[TechStack], config: &AppConfig) -> Vec<Vulnerability>`:
   - Untuk setiap tech dengan version → build CPE → query cache → jika miss, fetch dari NVD
   - Simpan ke cache
   - Return sebagai `Vulnerability` (tanpa payload, hanya info versi)
   - Prioritas: KEV entries mendapat severity bump
-- [ ] 🔴 CLI subcommand `temu cve update`:
+- [x] 🔴 CLI subcommand `temu cve update`:
   - Force refresh cache dari NVD + CISA KEV
   - Progress: "Updating CVE database... X entries cached"
-- [ ] 🟢 Integration test: tech stack → CVE matches
+- [x] 🟢 Integration test: tech stack → CVE matches
 
-### 🏁 Sprint 8 — Definition of Done
-- CVE lookup berdasarkan teknologi terdeteksi berfungsi
-- Cache SQLite menyimpan hasil query
-- CISA KEV memberikan prioritas lebih tinggi
-- `temu cve update` berjalan
+### 🏁 Sprint 8 — Definition of Done ✅
+- CVE lookup berdasarkan teknologi terdeteksi berfungsi ✅
+- Cache SQLite menyimpan hasil query ✅
+- CISA KEV memberikan prioritas lebih tinggi ✅
+- `temu cve update` berjalan ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo fmt --all --check` — formatted ✅
 
 ---
 

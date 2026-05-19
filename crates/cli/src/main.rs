@@ -115,8 +115,15 @@ async fn main() -> anyhow::Result<()> {
         Command::Cve { mode: cve_cmd } => {
             use args::CveCommand;
             match cve_cmd {
-                CveCommand::Update => {
-                    eprintln!("[!] cve update — not yet implemented");
+                CveCommand::Update { cpe } => {
+                    let default_config_path = std::path::PathBuf::from("config/default.toml");
+                    let config =
+                        temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                    eprintln!("[*] Updating CVE database...");
+                    let count = cve_client::update_cve_cache_for_cpes(&config, &cpe)
+                        .await
+                        .with_context(|| "Failed to update CVE cache")?;
+                    println!("CVE database updated: {count} entries cached");
                 }
             }
         }
