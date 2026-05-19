@@ -32,3 +32,4 @@ tempfile = "3"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 tera = "1"
+printpdf = "0.7"

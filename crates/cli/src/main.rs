@@ -9,7 +9,7 @@ use anyhow::Context;
 use args::{Cli, Command, DiscoveryModeArg, ReportFormat, ScanCommand, WordlistSize};
 use clap::Parser;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
-use reporter::{generate_html, generate_json};
+use reporter::{generate_html, generate_json, generate_pdf};
 use temu_core::init_logging;
 
 #[tokio::main]
@@ -92,9 +92,12 @@ async fn main() -> anyhow::Result<()> {
                     .with_context(|| "Failed to write JSON report")?;
                 let html_path = generate_html(&result, &output_dir)
                     .with_context(|| "Failed to write HTML report")?;
+                let pdf_path = generate_pdf(&result, &output_dir)
+                    .with_context(|| "Failed to write PDF report")?;
 
                 println!("{}", report_path.display());
                 println!("{}", html_path.display());
+                println!("{}", pdf_path.display());
             }
             ScanCommand::File { list } => {
                 eprintln!("[!] scan file --list {list:?} — not yet implemented");
@@ -114,8 +117,11 @@ async fn main() -> anyhow::Result<()> {
                     .with_context(|| "Failed to write JSON report")?;
                 let html_path = generate_html(&result, &config.output_dir)
                     .with_context(|| "Failed to write HTML report")?;
+                let pdf_path = generate_pdf(&result, &config.output_dir)
+                    .with_context(|| "Failed to write PDF report")?;
                 println!("{}", json_path.display());
                 println!("{}", html_path.display());
+                println!("{}", pdf_path.display());
             }
         },
 
@@ -133,6 +139,8 @@ async fn main() -> anyhow::Result<()> {
                             .with_context(|| "Failed to write JSON report")?,
                         ReportFormat::Html => generate_html(&result, &dir)
                             .with_context(|| "Failed to write HTML report")?,
+                        ReportFormat::Pdf => generate_pdf(&result, &dir)
+                            .with_context(|| "Failed to write PDF report")?,
                     };
                     println!("{}", path.display());
                 }

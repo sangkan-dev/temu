@@ -911,25 +911,29 @@ Tujuan: Network scanning, aturan deteksi CVE spesifik, PDF output, input CIDR da
 **Goal:** Generate laporan eksekutif dalam format PDF.
 
 ### 13.1 PDF Generation
-- [ ] 🔴 Setup dependency `printpdf` atau `genpdf` di reporter crate
-- [ ] 🔴 Fungsi `generate_pdf(result: &ScanResult, output_dir: &Path) -> Result<PathBuf>`
-- [ ] 🔴 Layout PDF:
+- [x] 🔴 Setup dependency `printpdf` atau `genpdf` di reporter crate
+- [x] 🔴 Fungsi `generate_pdf(result: &ScanResult, output_dir: &Path) -> Result<PathBuf>`
+- [x] 🔴 Layout PDF:
   - **Halaman 1**: Cover page (nama tool, target, tanggal, executive summary)
   - **Halaman 2**: Risk overview (tabel severity count, overall risk rating)
   - **Halaman 3+**: Detail vulnerability (1 vuln per section)
   - **Halaman terakhir**: Daftar assets dan rekomendasi umum
-- [ ] 🟡 Color coding severity (Critical=merah, High=oranye, Medium=kuning, Low=hijau)
-- [ ] 🟢 Header/footer dengan nomor halaman
+- [x] 🟡 Color coding severity (Critical=merah, High=oranye, Medium=kuning, Low=hijau)
+- [x] 🟢 Header/footer dengan nomor halaman
 
 ### 13.2 Integrasi
-- [ ] 🔴 CLI: `temu report generate --format pdf`
-- [ ] 🟡 Auto-generate PDF bersama JSON dan HTML setelah scan
-- [ ] 🟢 Unit test: generate PDF, validasi file valid
+- [x] 🔴 CLI: `temu report generate --format pdf`
+- [x] 🟡 Auto-generate PDF bersama JSON dan HTML setelah scan
+- [x] 🟢 Unit test: generate PDF, validasi file valid
 
 ### 🏁 Sprint 13 — Definition of Done
-- PDF report ter-generate dengan layout profesional
-- Semua data vulnerability tercantum
-- File PDF bisa dibuka di viewer standar
+- PDF report ter-generate dengan layout profesional ✅
+- Semua data vulnerability tercantum ✅
+- File PDF bisa dibuka di viewer standar ✅
+- `cargo fmt --all --check` — formatted ✅
+- `cargo clippy --all-targets` — no warnings ✅
+- `cargo test --workspace` — 0 FAILED ✅
+- `cargo build` — sukses ✅
 
 ---
 

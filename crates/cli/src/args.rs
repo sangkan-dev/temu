@@ -129,6 +129,7 @@ pub enum DiscoveryModeArg {
 pub enum ReportFormat {
     Json,
     Html,
+    Pdf,
 }
 
 #[derive(Debug, Clone, ValueEnum, Default)]
@@ -348,6 +349,29 @@ mod tests {
                 mode: ReportCommand::Generate { format, input },
             } => {
                 assert!(matches!(format, ReportFormat::Html));
+                assert_eq!(input, std::path::PathBuf::from("/tmp/result.json"));
+            }
+            _ => panic!("expected Report::Generate"),
+        }
+    }
+
+    #[test]
+    fn test_report_generate_pdf_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "report",
+            "generate",
+            "--format",
+            "pdf",
+            "--input",
+            "/tmp/result.json",
+        ])
+        .expect("report generate pdf must parse");
+        match cli.command {
+            Command::Report {
+                mode: ReportCommand::Generate { format, input },
+            } => {
+                assert!(matches!(format, ReportFormat::Pdf));
                 assert_eq!(input, std::path::PathBuf::from("/tmp/result.json"));
             }
             _ => panic!("expected Report::Generate"),
