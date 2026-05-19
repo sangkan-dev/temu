@@ -12,6 +12,7 @@ fn make_config(dictionaries_dir: PathBuf) -> AppConfig {
         output_dir: PathBuf::from("/tmp/temu_test_output"),
         rules_dir: PathBuf::from("/tmp/temu_test_rules"),
         dictionaries_dir,
+        max_recursion_depth: 2,
         wordlist_override: None,
     }
 }
@@ -49,5 +50,8 @@ async fn test_run_discovery_smart_heuristic_generates_candidates() {
 
     // SmartHeuristic should not panic even if no subdomains resolve
     let result = run_discovery(&target, &config, DiscoveryMode::SmartHeuristic).await;
-    assert!(result.is_ok(), "SmartHeuristic mode should not return an error");
+    assert!(
+        result.is_ok(),
+        "SmartHeuristic mode should not return an error"
+    );
 }

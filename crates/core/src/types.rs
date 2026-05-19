@@ -5,21 +5,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Defines the scanning scope via include/exclude regex patterns.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scope {
     /// Regex patterns for URLs/domains that are in scope.
     pub include_patterns: Vec<String>,
     /// Regex patterns for URLs/domains that must be excluded.
     pub exclude_patterns: Vec<String>,
-}
-
-impl Default for Scope {
-    fn default() -> Self {
-        Self {
-            include_patterns: Vec::new(),
-            exclude_patterns: Vec::new(),
-        }
-    }
 }
 
 /// The primary scan target, identified by domain, resolved IPs, and scope.
@@ -82,7 +73,11 @@ pub struct Asset {
 
 impl Asset {
     /// Creates a new `Asset` with the current timestamp.
-    pub fn new(url: impl Into<String>, asset_type: AssetType, discovered_by: impl Into<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        asset_type: AssetType,
+        discovered_by: impl Into<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             asset_type,

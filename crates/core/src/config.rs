@@ -21,10 +21,17 @@ pub struct AppConfig {
     pub rules_dir: PathBuf,
     /// Directory containing wordlist files.
     pub dictionaries_dir: PathBuf,
+    /// Maximum recursive path fuzzing depth.
+    #[serde(default = "default_max_recursion_depth")]
+    pub max_recursion_depth: usize,
     /// Optional override path to a custom wordlist file. When set, this
     /// takes precedence over the size-based preset from `dictionaries_dir`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wordlist_override: Option<PathBuf>,
+}
+
+fn default_max_recursion_depth() -> usize {
+    2
 }
 
 impl Default for AppConfig {
@@ -37,6 +44,7 @@ impl Default for AppConfig {
             output_dir: PathBuf::from("./results"),
             rules_dir: PathBuf::from("./rules"),
             dictionaries_dir: PathBuf::from("./dictionaries"),
+            max_recursion_depth: default_max_recursion_depth(),
             wordlist_override: None,
         }
     }
@@ -64,23 +72,24 @@ impl AppConfig {
     ///
     /// Each field has a corresponding env var with the `TEMU_` prefix:
     /// `TEMU_RATE_LIMIT`, `TEMU_TIMEOUT_SECS`, `TEMU_CONCURRENCY`,
-    /// `TEMU_USER_AGENT`, `TEMU_OUTPUT_DIR`, `TEMU_RULES_DIR`, `TEMU_DICTIONARIES_DIR`.
+    /// `TEMU_USER_AGENT`, `TEMU_OUTPUT_DIR`, `TEMU_RULES_DIR`, `TEMU_DICTIONARIES_DIR`,
+    /// `TEMU_MAX_RECURSION_DEPTH`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
-        if let Ok(v) = std::env::var("TEMU_RATE_LIMIT") {
-            if let Ok(n) = v.parse() {
-                self.rate_limit = n;
-            }
+        if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
+            && let Ok(n) = v.parse()
+        {
+            self.rate_limit = n;
         }
-        if let Ok(v) = std::env::var("TEMU_TIMEOUT_SECS") {
-            if let Ok(n) = v.parse() {
-                self.timeout_secs = n;
-            }
+        if let Ok(v) = std::env::var("TEMU_TIMEOUT_SECS")
+            && let Ok(n) = v.parse()
+        {
+            self.timeout_secs = n;
         }
-        if let Ok(v) = std::env::var("TEMU_CONCURRENCY") {
-            if let Ok(n) = v.parse() {
-                self.concurrency = n;
-            }
+        if let Ok(v) = std::env::var("TEMU_CONCURRENCY")
+            && let Ok(n) = v.parse()
+        {
+            self.concurrency = n;
         }
         if let Ok(v) = std::env::var("TEMU_USER_AGENT") {
             self.user_agent = v;
@@ -93,6 +102,11 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("TEMU_DICTIONARIES_DIR") {
             self.dictionaries_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("TEMU_MAX_RECURSION_DEPTH")
+            && let Ok(n) = v.parse()
+        {
+            self.max_recursion_depth = n;
         }
     }
 
@@ -129,6 +143,7 @@ mod tests {
         assert_eq!(config.output_dir, PathBuf::from("./results"));
         assert_eq!(config.rules_dir, PathBuf::from("./rules"));
         assert_eq!(config.dictionaries_dir, PathBuf::from("./dictionaries"));
+        assert_eq!(config.max_recursion_depth, 2);
     }
 
     #[test]
@@ -141,6 +156,7 @@ user_agent = "Temu/0.2.0"
 output_dir = "/tmp/results"
 rules_dir = "/tmp/rules"
 dictionaries_dir = "/tmp/dicts"
+max_recursion_depth = 3
 "#;
         let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         tmp.write_all(toml_content.as_bytes()).unwrap();
@@ -150,6 +166,7 @@ dictionaries_dir = "/tmp/dicts"
         assert_eq!(config.timeout_secs, 20);
         assert_eq!(config.concurrency, 200);
         assert_eq!(config.user_agent, "Temu/0.2.0");
+        assert_eq!(config.max_recursion_depth, 3);
     }
 
     #[test]
@@ -204,5 +221,15 @@ dictionaries_dir = "/tmp/dicts"
         config.apply_env_overrides();
         unsafe { std::env::remove_var("TEMU_OUTPUT_DIR") };
         assert_eq!(config.output_dir, PathBuf::from("/tmp/temu_results"));
+    }
+
+    #[test]
+    fn test_apply_env_overrides_max_recursion_depth() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::set_var("TEMU_MAX_RECURSION_DEPTH", "4") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_MAX_RECURSION_DEPTH") };
+        assert_eq!(config.max_recursion_depth, 4);
     }
 }

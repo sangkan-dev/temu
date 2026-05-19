@@ -109,15 +109,15 @@ pub async fn probe_all(hosts: &[String], config: &AppConfig) -> Vec<ProbeResult>
 
 /// Marks `ProbeResult` entries as duplicates if more than one host redirected
 /// to the same final URL.
-fn mark_duplicates(results: &mut Vec<ProbeResult>) {
+fn mark_duplicates(results: &mut [ProbeResult]) {
     let mut seen_redirects: HashSet<String> = HashSet::new();
 
     for result in results.iter_mut() {
-        if let Some(ref redir) = result.redirect_url {
-            if !seen_redirects.insert(redir.clone()) {
-                result.is_duplicate = true;
-                warn!("Duplicate redirect target: {redir}");
-            }
+        if let Some(ref redir) = result.redirect_url
+            && !seen_redirects.insert(redir.clone())
+        {
+            result.is_duplicate = true;
+            warn!("Duplicate redirect target: {redir}");
         }
     }
 }
@@ -266,10 +266,7 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string("<title>Mock</title>"),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_string("<title>Mock</title>"))
             .mount(&mock_server)
             .await;
 

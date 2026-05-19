@@ -68,7 +68,10 @@ mod tests {
     #[test]
     fn test_config_error_display() {
         let err = TemuError::Config("missing field rate_limit".to_string());
-        assert_eq!(err.to_string(), "Configuration error: missing field rate_limit");
+        assert_eq!(
+            err.to_string(),
+            "Configuration error: missing field rate_limit"
+        );
     }
 
     #[test]

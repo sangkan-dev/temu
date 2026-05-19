@@ -1,14 +1,43 @@
 use std::collections::HashSet;
 
 const SERVICE_TAGS: &[&str] = &[
-    "api", "www", "app", "admin", "mail", "cdn", "static", "dev", "staging", "prod", "test",
-    "beta", "alpha", "portal", "dashboard", "git", "gitlab", "jenkins", "monitor", "status",
-    "docs", "shop", "store", "mobile", "m", "media", "img", "assets",
+    "api",
+    "www",
+    "app",
+    "admin",
+    "mail",
+    "cdn",
+    "static",
+    "dev",
+    "staging",
+    "prod",
+    "test",
+    "beta",
+    "alpha",
+    "portal",
+    "dashboard",
+    "git",
+    "gitlab",
+    "jenkins",
+    "monitor",
+    "status",
+    "docs",
+    "shop",
+    "store",
+    "mobile",
+    "m",
+    "media",
+    "img",
+    "assets",
 ];
 
-const ENV_TAGS: &[&str] = &["prod", "dev", "staging", "uat", "test", "qa", "preprod", "sandbox"];
+const ENV_TAGS: &[&str] = &[
+    "prod", "dev", "staging", "uat", "test", "qa", "preprod", "sandbox",
+];
 
-const REGION_TAGS: &[&str] = &["us", "eu", "ap", "sg", "id", "us-east", "us-west", "eu-west"];
+const REGION_TAGS: &[&str] = &[
+    "us", "eu", "ap", "sg", "id", "us-east", "us-west", "eu-west",
+];
 
 const NUMERIC_SUFFIXES: &[&str] = &["1", "2", "3", "01", "02", "03"];
 
@@ -126,7 +155,11 @@ mod tests {
     fn test_generate_candidates_different_domains() {
         let c1 = generate_candidates("example.com");
         let c2 = generate_candidates("target.io");
-        assert_eq!(c1.len(), c2.len(), "Count should be the same regardless of domain");
+        assert_eq!(
+            c1.len(),
+            c2.len(),
+            "Count should be the same regardless of domain"
+        );
         assert_ne!(c1[0], c2[0], "Candidates should differ by domain");
     }
 }

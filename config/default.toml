@@ -5,3 +5,4 @@ user_agent = "Temu/0.1.0"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
+max_recursion_depth = 2

@@ -17,7 +17,8 @@ pub struct DnsResolver {
 impl DnsResolver {
     /// Creates a new `DnsResolver` using the system's default resolver configuration.
     pub async fn new() -> Result<Self, TemuError> {
-        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+        let resolver =
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
         Ok(Self { inner: resolver })
     }
 

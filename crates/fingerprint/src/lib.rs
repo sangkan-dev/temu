@@ -55,7 +55,10 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
         info!(
             "Detected: {}{} (confidence: {:.2})",
             tech.name,
-            tech.version.as_deref().map(|v| format!("/{v}")).unwrap_or_default(),
+            tech.version
+                .as_deref()
+                .map(|v| format!("/{v}"))
+                .unwrap_or_default(),
             tech.confidence
         );
     }
@@ -88,6 +91,7 @@ mod tests {
             output_dir: PathBuf::from("/tmp"),
             rules_dir: rules_dir(),
             dictionaries_dir: PathBuf::from("/tmp"),
+            max_recursion_depth: 2,
             wordlist_override: None,
         }
     }
@@ -110,7 +114,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.iter().any(|t| t.name == "Apache"), "Apache not detected");
+        assert!(
+            result.iter().any(|t| t.name == "Apache"),
+            "Apache not detected"
+        );
         let apache = result.iter().find(|t| t.name == "Apache").unwrap();
         assert_eq!(apache.version, Some("2.4.51".to_string()));
     }
@@ -121,10 +128,9 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string(r#"<html><head><meta name="generator" content="WordPress 6.2"/></head></html>"#),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"<html><head><meta name="generator" content="WordPress 6.2"/></head></html>"#,
+            ))
             .mount(&mock_server)
             .await;
 
@@ -132,7 +138,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.iter().any(|t| t.name == "WordPress"), "WordPress not detected");
+        assert!(
+            result.iter().any(|t| t.name == "WordPress"),
+            "WordPress not detected"
+        );
     }
 
     #[tokio::test]
@@ -176,9 +185,18 @@ mod tests {
             .unwrap();
 
         // WordPress implies PHP and MySQL
-        assert!(result.iter().any(|t| t.name == "WordPress"), "WordPress missing");
-        assert!(result.iter().any(|t| t.name == "PHP"), "PHP not implied by WordPress");
-        assert!(result.iter().any(|t| t.name == "MySQL"), "MySQL not implied by WordPress");
+        assert!(
+            result.iter().any(|t| t.name == "WordPress"),
+            "WordPress missing"
+        );
+        assert!(
+            result.iter().any(|t| t.name == "PHP"),
+            "PHP not implied by WordPress"
+        );
+        assert!(
+            result.iter().any(|t| t.name == "MySQL"),
+            "MySQL not implied by WordPress"
+        );
     }
 
     #[tokio::test]
@@ -197,6 +215,9 @@ mod tests {
         };
 
         let result = run_fingerprint(&mock_server.uri(), &config).await.unwrap();
-        assert!(result.is_empty(), "should return empty when rules file missing");
+        assert!(
+            result.is_empty(),
+            "should return empty when rules file missing"
+        );
     }
 }

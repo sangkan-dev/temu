@@ -42,7 +42,8 @@ pub async fn fetch_crtsh_with_base(domain: &str, base_url: &str) -> Result<Vec<S
             let backoff = Duration::from_secs(2u64.pow(attempt));
             warn!(
                 "crt.sh attempt {}/{MAX_RETRIES} failed, retrying in {}s",
-                attempt, backoff.as_secs()
+                attempt,
+                backoff.as_secs()
             );
             sleep(backoff).await;
         }
@@ -56,10 +57,7 @@ pub async fn fetch_crtsh_with_base(domain: &str, base_url: &str) -> Result<Vec<S
         };
 
         if response.status().is_server_error() {
-            last_err = TemuError::Network(format!(
-                "crt.sh returned HTTP {}",
-                response.status()
-            ));
+            last_err = TemuError::Network(format!("crt.sh returned HTTP {}", response.status()));
             continue;
         }
 
@@ -101,26 +99,29 @@ pub async fn fetch_crtsh_with_cache_and_base(
     let cache_file = cache_dir.join(format!("crtsh_{}.json", domain.replace('.', "_")));
 
     // Try reading from cache if not expired
-    if let Ok(metadata) = std::fs::metadata(&cache_file) {
-        if let Ok(modified) = metadata.modified() {
-            let age = SystemTime::now()
-                .duration_since(modified)
-                .unwrap_or(Duration::MAX);
-            if age.as_secs() < CACHE_TTL_SECS {
-                if let Ok(cached) = std::fs::read_to_string(&cache_file) {
-                    if let Ok(hostnames) = serde_json::from_str::<Vec<String>>(&cached) {
-                        debug!(
-                            "CT log cache hit for {domain} ({} entries, age {}s)",
-                            hostnames.len(),
-                            age.as_secs()
-                        );
-                        info!("CT logs (crt.sh cache): found {} unique subdomains for {domain}", hostnames.len());
-                        return Ok(hostnames);
-                    }
-                }
-            } else {
-                debug!("CT log cache expired for {domain} (age {}s)", age.as_secs());
+    if let Ok(metadata) = std::fs::metadata(&cache_file)
+        && let Ok(modified) = metadata.modified()
+    {
+        let age = SystemTime::now()
+            .duration_since(modified)
+            .unwrap_or(Duration::MAX);
+        if age.as_secs() < CACHE_TTL_SECS {
+            if let Ok(cached) = std::fs::read_to_string(&cache_file)
+                && let Ok(hostnames) = serde_json::from_str::<Vec<String>>(&cached)
+            {
+                debug!(
+                    "CT log cache hit for {domain} ({} entries, age {}s)",
+                    hostnames.len(),
+                    age.as_secs()
+                );
+                info!(
+                    "CT logs (crt.sh cache): found {} unique subdomains for {domain}",
+                    hostnames.len()
+                );
+                return Ok(hostnames);
             }
+        } else {
+            debug!("CT log cache expired for {domain} (age {}s)", age.as_secs());
         }
     }
 
@@ -162,10 +163,10 @@ fn parse_crtsh_body(body: &str, domain: &str) -> Result<Vec<String>, TemuError> 
             let host = raw.strip_prefix("*.").unwrap_or(raw).to_lowercase();
 
             // Only keep if it's a subdomain of (or equal to) the target domain
-            if host == domain_lower || host.ends_with(&format!(".{domain_lower}")) {
-                if seen.insert(host.clone()) {
-                    results.push(host);
-                }
+            if (host == domain_lower || host.ends_with(&format!(".{domain_lower}")))
+                && seen.insert(host.clone())
+            {
+                results.push(host);
             }
         }
     }
@@ -299,7 +300,11 @@ mod tests {
             .await;
 
         let result = fetch_crtsh_with_base("example.com", &mock_server.uri()).await;
-        assert!(result.is_ok(), "should succeed after retry: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should succeed after retry: {:?}",
+            result.err()
+        );
         assert!(result.unwrap().contains(&"api.example.com".to_string()));
     }
 
@@ -346,6 +351,9 @@ mod tests {
 
         // Cache file should now exist
         let cache_file = cache_dir.join("crtsh_example_com.json");
-        assert!(cache_file.exists(), "cache file should be written after fetch");
+        assert!(
+            cache_file.exists(),
+            "cache file should be written after fetch"
+        );
     }
 }

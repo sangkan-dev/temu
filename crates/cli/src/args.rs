@@ -136,7 +136,16 @@ mod tests {
         let cli = Cli::try_parse_from(["temu", "scan", "single", "--url", "https://example.com"])
             .expect("minimal scan single must parse");
         match cli.command {
-            Command::Scan { mode: ScanCommand::Single { url, rate, timeout, output, .. } } => {
+            Command::Scan {
+                mode:
+                    ScanCommand::Single {
+                        url,
+                        rate,
+                        timeout,
+                        output,
+                        ..
+                    },
+            } => {
                 assert_eq!(url, "https://example.com");
                 assert!(rate.is_none());
                 assert!(timeout.is_none());
@@ -149,12 +158,19 @@ mod tests {
     #[test]
     fn test_scan_single_all_options() {
         let cli = Cli::try_parse_from([
-            "temu", "scan", "single",
-            "--url", "https://target.com",
-            "--mode", "passive",
-            "--rate", "30",
-            "--timeout", "15",
-            "--output", "/tmp/results",
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://target.com",
+            "--mode",
+            "passive",
+            "--rate",
+            "30",
+            "--timeout",
+            "15",
+            "--output",
+            "/tmp/results",
             "--verbose",
         ])
         .expect("full options must parse");
@@ -162,7 +178,15 @@ mod tests {
         assert!(cli.verbose);
         match cli.command {
             Command::Scan {
-                mode: ScanCommand::Single { url, mode, rate, timeout, output, .. },
+                mode:
+                    ScanCommand::Single {
+                        url,
+                        mode,
+                        rate,
+                        timeout,
+                        output,
+                        ..
+                    },
             } => {
                 assert_eq!(url, "https://target.com");
                 assert!(matches!(mode, DiscoveryModeArg::Passive));
@@ -179,7 +203,9 @@ mod tests {
         let cli = Cli::try_parse_from(["temu", "scan", "single", "--url", "https://example.com"])
             .unwrap();
         match cli.command {
-            Command::Scan { mode: ScanCommand::Single { mode, .. } } => {
+            Command::Scan {
+                mode: ScanCommand::Single { mode, .. },
+            } => {
                 assert!(matches!(mode, DiscoveryModeArg::Hybrid));
             }
             _ => panic!("expected Scan::Single"),
@@ -195,11 +221,19 @@ mod tests {
             ("hybrid", "hybrid"),
         ] {
             let cli = Cli::try_parse_from([
-                "temu", "scan", "single", "--url", "https://x.com", "--mode", arg,
+                "temu",
+                "scan",
+                "single",
+                "--url",
+                "https://x.com",
+                "--mode",
+                arg,
             ])
             .unwrap_or_else(|e| panic!("mode '{arg}' failed: {e}"));
             match cli.command {
-                Command::Scan { mode: ScanCommand::Single { mode, .. } } => {
+                Command::Scan {
+                    mode: ScanCommand::Single { mode, .. },
+                } => {
                     assert_eq!(format!("{mode:?}").to_lowercase(), expected);
                 }
                 _ => panic!("expected Scan::Single"),
@@ -215,8 +249,15 @@ mod tests {
 
     #[test]
     fn test_invalid_mode_fails() {
-        let result =
-            Cli::try_parse_from(["temu", "scan", "single", "--url", "https://x.com", "--mode", "invalid"]);
+        let result = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://x.com",
+            "--mode",
+            "invalid",
+        ]);
         assert!(result.is_err(), "invalid mode must fail");
     }
 
@@ -225,7 +266,9 @@ mod tests {
         let cli = Cli::try_parse_from(["temu", "scan", "file", "--list", "/tmp/targets.txt"])
             .expect("scan file must parse");
         match cli.command {
-            Command::Scan { mode: ScanCommand::File { list } } => {
+            Command::Scan {
+                mode: ScanCommand::File { list },
+            } => {
                 assert_eq!(list, std::path::PathBuf::from("/tmp/targets.txt"));
             }
             _ => panic!("expected Scan::File"),
@@ -237,7 +280,9 @@ mod tests {
         let cli = Cli::try_parse_from(["temu", "scan", "network", "--cidr", "10.0.0.0/24"])
             .expect("scan network must parse");
         match cli.command {
-            Command::Scan { mode: ScanCommand::Network { cidr } } => {
+            Command::Scan {
+                mode: ScanCommand::Network { cidr },
+            } => {
                 assert_eq!(cidr, "10.0.0.0/24");
             }
             _ => panic!("expected Scan::Network"),
@@ -246,12 +291,13 @@ mod tests {
 
     #[test]
     fn test_report_generate_parses() {
-        let cli = Cli::try_parse_from([
-            "temu", "report", "generate", "--input", "/tmp/result.json",
-        ])
-        .expect("report generate must parse");
+        let cli =
+            Cli::try_parse_from(["temu", "report", "generate", "--input", "/tmp/result.json"])
+                .expect("report generate must parse");
         match cli.command {
-            Command::Report { mode: ReportCommand::Generate { format, input } } => {
+            Command::Report {
+                mode: ReportCommand::Generate { format, input },
+            } => {
                 assert!(matches!(format, ReportFormat::Json));
                 assert_eq!(input, std::path::PathBuf::from("/tmp/result.json"));
             }
@@ -264,28 +310,47 @@ mod tests {
         let cli = Cli::try_parse_from(["temu", "cve", "update"]).expect("cve update must parse");
         assert!(matches!(
             cli.command,
-            Command::Cve { mode: CveCommand::Update }
+            Command::Cve {
+                mode: CveCommand::Update
+            }
         ));
     }
 
     #[test]
     fn test_verbose_is_global_flag() {
-        let cli =
-            Cli::try_parse_from(["temu", "--verbose", "scan", "single", "--url", "https://x.com"])
-                .expect("--verbose before subcommand must work");
+        let cli = Cli::try_parse_from([
+            "temu",
+            "--verbose",
+            "scan",
+            "single",
+            "--url",
+            "https://x.com",
+        ])
+        .expect("--verbose before subcommand must work");
         assert!(cli.verbose);
     }
 
     #[test]
     fn test_wordlist_size_flag() {
         let cli = Cli::try_parse_from([
-            "temu", "scan", "single",
-            "--url", "https://example.com",
-            "--wordlist-size", "medium",
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://example.com",
+            "--wordlist-size",
+            "medium",
         ])
         .expect("--wordlist-size medium must parse");
         match cli.command {
-            Command::Scan { mode: ScanCommand::Single { wordlist_size, wordlist, .. } } => {
+            Command::Scan {
+                mode:
+                    ScanCommand::Single {
+                        wordlist_size,
+                        wordlist,
+                        ..
+                    },
+            } => {
                 assert!(matches!(wordlist_size, WordlistSize::Medium));
                 assert!(wordlist.is_none());
             }
@@ -296,14 +361,28 @@ mod tests {
     #[test]
     fn test_custom_wordlist_flag() {
         let cli = Cli::try_parse_from([
-            "temu", "scan", "single",
-            "--url", "https://example.com",
-            "--wordlist", "/tmp/custom-words.txt",
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://example.com",
+            "--wordlist",
+            "/tmp/custom-words.txt",
         ])
         .expect("--wordlist custom path must parse");
         match cli.command {
-            Command::Scan { mode: ScanCommand::Single { wordlist, wordlist_size, .. } } => {
-                assert_eq!(wordlist, Some(std::path::PathBuf::from("/tmp/custom-words.txt")));
+            Command::Scan {
+                mode:
+                    ScanCommand::Single {
+                        wordlist,
+                        wordlist_size,
+                        ..
+                    },
+            } => {
+                assert_eq!(
+                    wordlist,
+                    Some(std::path::PathBuf::from("/tmp/custom-words.txt"))
+                );
                 assert!(matches!(wordlist_size, WordlistSize::Small)); // default unchanged
             }
             _ => panic!("expected Scan::Single"),

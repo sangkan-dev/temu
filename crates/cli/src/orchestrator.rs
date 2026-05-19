@@ -25,8 +25,8 @@ pub async fn run_scan(
 ) -> anyhow::Result<ScanResult> {
     let started_at = Utc::now();
 
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|e| anyhow::anyhow!("Invalid URL '{url}': {e}"))?;
+    let parsed =
+        reqwest::Url::parse(url).map_err(|e| anyhow::anyhow!("Invalid URL '{url}': {e}"))?;
     let domain = parsed
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("URL has no host: {url}"))?
@@ -36,10 +36,12 @@ pub async fn run_scan(
 
     // ── 1. Discovery ─────────────────────────────────────────────────────────
     let target = Target::new(&domain);
-    let discovered = run_discovery(&target, config, mode).await.unwrap_or_else(|e| {
-        tracing::warn!("Discovery error (continuing): {e}");
-        vec![]
-    });
+    let discovered = run_discovery(&target, config, mode)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Discovery error (continuing): {e}");
+            vec![]
+        });
     let subdomains_found = discovered
         .iter()
         .filter(|a| a.asset_type == AssetType::Subdomain)
@@ -92,9 +94,16 @@ pub async fn run_scan(
         tracing::warn!("Fuzzing error (continuing): {e}");
         vec![]
     });
-    let paths_found = fuzzing_assets.len() as u32;
-    eprintln!("[+] Fuzzing: found {paths_found} paths");
-    info!("Fuzzing complete: {paths_found} paths");
+    let paths_found = fuzzing_assets
+        .iter()
+        .filter(|a| a.asset_type == AssetType::Path)
+        .count() as u32;
+    let parameters_found = fuzzing_assets
+        .iter()
+        .filter(|a| a.asset_type == AssetType::Parameter)
+        .count() as u32;
+    eprintln!("[+] Fuzzing: found {paths_found} paths, {parameters_found} parameters");
+    info!("Fuzzing complete: {paths_found} paths, {parameters_found} parameters");
 
     // ── 4. Vulnerability scan ────────────────────────────────────────────────
     // Collect all URLs to scan: base URL + discovered paths
@@ -102,8 +111,7 @@ pub async fn run_scan(
     all_assets.extend(discovered.clone());
     all_assets.extend(fuzzing_assets.clone());
 
-    let all_techs: Vec<fingerprint::TechStack> =
-        tech_stacks.values().flatten().cloned().collect();
+    let all_techs: Vec<fingerprint::TechStack> = tech_stacks.values().flatten().cloned().collect();
 
     let vulnerabilities = run_vulnerability_scan(&all_assets, &all_techs, config)
         .await
@@ -134,6 +142,7 @@ pub async fn run_scan(
         stats: ScanStats {
             subdomains_found,
             paths_found,
+            parameters_found,
             vulns_found,
             duration_secs,
         },

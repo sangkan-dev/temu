@@ -86,15 +86,22 @@ impl<'a> CompiledRule<'a> {
     }
 
     /// Try to match this rule against the response. Returns detected version string if found.
-    fn try_match(&self, headers: &HeaderMap, body: &str, cookie_header: &str) -> Option<Option<String>> {
+    fn try_match(
+        &self,
+        headers: &HeaderMap,
+        body: &str,
+        cookie_header: &str,
+    ) -> Option<Option<String>> {
         debug!("Trying rule: {}", self.name);
 
         // Check header patterns (ANY match is sufficient)
         for (header_name, re) in &self.header_patterns {
-            if let Some(value) = headers.get(header_name.as_str()).and_then(|v| v.to_str().ok()) {
-                if let Some(caps) = re.captures(value) {
-                    return Some(caps.get(1).map(|m| m.as_str().to_string()));
-                }
+            if let Some(value) = headers
+                .get(header_name.as_str())
+                .and_then(|v| v.to_str().ok())
+                && let Some(caps) = re.captures(value)
+            {
+                return Some(caps.get(1).map(|m| m.as_str().to_string()));
             }
         }
 
@@ -107,19 +114,19 @@ impl<'a> CompiledRule<'a> {
 
         // Check meta patterns
         for (meta_name, re) in &self.meta_patterns {
-            if let Some(content) = extract_meta_content(body, meta_name) {
-                if let Some(caps) = re.captures(&content) {
-                    return Some(caps.get(1).map(|m| m.as_str().to_string()));
-                }
+            if let Some(content) = extract_meta_content(body, meta_name)
+                && let Some(caps) = re.captures(&content)
+            {
+                return Some(caps.get(1).map(|m| m.as_str().to_string()));
             }
         }
 
         // Check cookie patterns
         for (cookie_name, re) in &self.cookie_patterns {
-            if let Some(value) = extract_cookie(cookie_header, cookie_name) {
-                if re.is_match(&value) {
-                    return Some(None);
-                }
+            if let Some(value) = extract_cookie(cookie_header, cookie_name)
+                && re.is_match(&value)
+            {
+                return Some(None);
             }
         }
 
@@ -162,10 +169,10 @@ fn extract_meta_content(body: &str, meta_name: &str) -> Option<String> {
 fn extract_cookie(cookie_header: &str, cookie_name: &str) -> Option<String> {
     for part in cookie_header.split(';') {
         let part = part.trim();
-        if let Some((name, value)) = part.split_once('=') {
-            if name.trim().to_lowercase() == cookie_name.to_lowercase() {
-                return Some(value.trim().to_string());
-            }
+        if let Some((name, value)) = part.split_once('=')
+            && name.trim().to_lowercase() == cookie_name.to_lowercase()
+        {
+            return Some(value.trim().to_string());
         }
     }
     None
@@ -192,28 +199,28 @@ pub fn match_all_rules(
 
     // First pass: match all rules
     for rule in rules {
-        if let Some(compiled) = CompiledRule::compile(rule) {
-            if let Some(captured_version) = compiled.try_match(headers, body, &cookie_header) {
-                let tech = TechStack::new(
-                    rule.name.clone(),
-                    captured_version,
-                    rule.confidence,
-                    rule.category.clone(),
-                );
-                debug!(
-                    "Fingerprint match: {} (confidence: {:.2})",
-                    tech.name, tech.confidence
-                );
-                // Keep highest confidence for same name
-                results
-                    .entry(rule.name.clone())
-                    .and_modify(|existing| {
-                        if tech.confidence > existing.confidence {
-                            *existing = tech.clone();
-                        }
-                    })
-                    .or_insert(tech);
-            }
+        if let Some(compiled) = CompiledRule::compile(rule)
+            && let Some(captured_version) = compiled.try_match(headers, body, &cookie_header)
+        {
+            let tech = TechStack::new(
+                rule.name.clone(),
+                captured_version,
+                rule.confidence,
+                rule.category.clone(),
+            );
+            debug!(
+                "Fingerprint match: {} (confidence: {:.2})",
+                tech.name, tech.confidence
+            );
+            // Keep highest confidence for same name
+            results
+                .entry(rule.name.clone())
+                .and_modify(|existing| {
+                    if tech.confidence > existing.confidence {
+                        *existing = tech.clone();
+                    }
+                })
+                .or_insert(tech);
         }
     }
 
@@ -221,7 +228,11 @@ pub fn match_all_rules(
     apply_implies(rules, &mut results);
 
     let mut sorted: Vec<TechStack> = results.into_values().collect();
-    sorted.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     sorted
 }
 
@@ -268,9 +279,9 @@ fn apply_implies(rules: &[FingerprintRule], results: &mut HashMap<String, TechSt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::TechCategory;
     use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
     use std::io::Write;
-    use crate::types::TechCategory;
 
     fn make_headers(pairs: &[(&str, &str)]) -> HeaderMap {
         let mut map = HeaderMap::new();
@@ -322,7 +333,10 @@ mod tests {
             confidence: 0.90,
             headers: {
                 let mut m = HashMap::new();
-                m.insert("x-powered-by".to_string(), r"(?i)PHP(?:/([\d.]+))?".to_string());
+                m.insert(
+                    "x-powered-by".to_string(),
+                    r"(?i)PHP(?:/([\d.]+))?".to_string(),
+                );
                 m
             },
             body: vec![],
@@ -342,7 +356,10 @@ mod tests {
             body: vec![],
             meta: {
                 let mut m = HashMap::new();
-                m.insert("generator".to_string(), r"(?i)WordPress(?:\s+([\d.]+))?".to_string());
+                m.insert(
+                    "generator".to_string(),
+                    r"(?i)WordPress(?:\s+([\d.]+))?".to_string(),
+                );
                 m
             },
             cookies: HashMap::new(),
@@ -381,7 +398,10 @@ mod tests {
         let body = r#"<link rel="stylesheet" href="/wp-content/themes/main.css">"#;
         let result = match_all_rules(&rules, &headers, body);
 
-        assert!(result.iter().any(|t| t.name == "WordPress"), "WordPress not detected");
+        assert!(
+            result.iter().any(|t| t.name == "WordPress"),
+            "WordPress not detected"
+        );
     }
 
     #[test]
@@ -404,8 +424,14 @@ mod tests {
         let result = match_all_rules(&rules, &headers, body);
 
         // WordPress implies PHP and MySQL — PHP should be auto-added
-        assert!(result.iter().any(|t| t.name == "WordPress"), "WordPress missing");
-        assert!(result.iter().any(|t| t.name == "PHP"), "PHP not implied from WordPress");
+        assert!(
+            result.iter().any(|t| t.name == "WordPress"),
+            "WordPress missing"
+        );
+        assert!(
+            result.iter().any(|t| t.name == "PHP"),
+            "PHP not implied from WordPress"
+        );
     }
 
     #[test]
@@ -428,7 +454,10 @@ mod tests {
 
         let nginx_count = result.iter().filter(|t| t.name == "nginx").count();
         assert_eq!(nginx_count, 1, "nginx should appear only once after dedup");
-        assert!(result[0].confidence >= 0.95, "highest confidence should win");
+        assert!(
+            result[0].confidence >= 0.95,
+            "highest confidence should win"
+        );
     }
 
     #[test]

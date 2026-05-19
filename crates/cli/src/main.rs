@@ -32,8 +32,7 @@ async fn main() -> anyhow::Result<()> {
                 wordlist,
             } => {
                 // Validate URL early
-                reqwest::Url::parse(&url)
-                    .with_context(|| format!("Invalid URL: {url}"))?;
+                reqwest::Url::parse(&url).with_context(|| format!("Invalid URL: {url}"))?;
 
                 // Load config (from file if given, else default.toml, else hardcoded defaults)
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
@@ -106,8 +105,8 @@ async fn main() -> anyhow::Result<()> {
                     let result: reporter::ScanResult = serde_json::from_str(&content)
                         .with_context(|| "Failed to parse input as ScanResult JSON")?;
                     let dir = input.parent().unwrap_or(&PathBuf::from(".")).to_path_buf();
-                    let path = generate_json(&result, &dir)
-                        .with_context(|| "Failed to write report")?;
+                    let path =
+                        generate_json(&result, &dir).with_context(|| "Failed to write report")?;
                     println!("{}", path.display());
                 }
             }

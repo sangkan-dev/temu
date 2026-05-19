@@ -13,8 +13,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 /// The `RUST_LOG` environment variable, when set, always takes precedence over
 /// the `level` argument (standard `EnvFilter` behaviour).
 pub fn init_logging(level: &str) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
     let _ = tracing_subscriber::registry()
         .with(filter)
@@ -31,8 +30,7 @@ pub fn init_logging(level: &str) {
 /// This function is safe to call multiple times — subsequent calls are silently
 /// ignored if a subscriber is already installed.
 pub fn init_logging_with_file(level: &str, log_dir: Option<&Path>) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
     let stdout_layer = fmt::layer().with_target(true).with_ansi(true);
 

@@ -29,9 +29,8 @@ pub fn generate_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, 
     let filename = format!("{date}_{sanitized}.json");
     let path = output_dir.join(&filename);
 
-    let json = serde_json::to_string_pretty(result).map_err(|e| {
-        TemuError::Parse(format!("Failed to serialize ScanResult: {e}"))
-    })?;
+    let json = serde_json::to_string_pretty(result)
+        .map_err(|e| TemuError::Parse(format!("Failed to serialize ScanResult: {e}")))?;
 
     std::fs::write(&path, json).map_err(|e| {
         TemuError::Io(std::io::Error::new(
@@ -63,6 +62,7 @@ mod tests {
             stats: ScanStats {
                 subdomains_found: 0,
                 paths_found: 0,
+                parameters_found: 0,
                 vulns_found: 0,
                 duration_secs: 0.0,
             },

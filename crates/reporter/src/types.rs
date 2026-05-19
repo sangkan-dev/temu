@@ -26,6 +26,7 @@ pub struct ScanResult {
 pub struct ScanStats {
     pub subdomains_found: u32,
     pub paths_found: u32,
+    pub parameters_found: u32,
     pub vulns_found: u32,
     pub duration_secs: f64,
 }

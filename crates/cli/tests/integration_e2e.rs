@@ -16,6 +16,7 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         output_dir,
         rules_dir,
         dictionaries_dir,
+        max_recursion_depth: 2,
         wordlist_override: None,
     }
 }
@@ -58,8 +59,7 @@ async fn test_full_pipeline_scan() {
     Mock::given(method("GET"))
         .and(path("/.env"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string("APP_KEY=base64:abc\nDB_PASSWORD=secret123"),
+            ResponseTemplate::new(200).set_body_string("APP_KEY=base64:abc\nDB_PASSWORD=secret123"),
         )
         .mount(&mock_server)
         .await;
@@ -81,6 +81,7 @@ async fn test_full_pipeline_scan() {
         "/robots.txt\n/.env\n/admin\n/nonexistent_path_xyz\n",
     )
     .unwrap();
+    std::fs::write(dict_dir.join("parameters-small.txt"), "id\nq\nunused\n").unwrap();
 
     // Rules dir with our sensitive-files rule + fingerprint rules
     let rules_dir = tmp.path().join("rules");
@@ -104,7 +105,8 @@ remediation: "Move .env outside web root"
     .unwrap();
 
     // Copy fingerprint_rules.yaml from workspace rules/ dir
-    let workspace_rules = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rules/fingerprint_rules.yaml");
+    let workspace_rules =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rules/fingerprint_rules.yaml");
     if workspace_rules.exists() {
         std::fs::copy(&workspace_rules, rules_dir.join("fingerprint_rules.yaml")).unwrap();
     }
@@ -174,6 +176,7 @@ fn test_scan_result_json_roundtrip() {
         stats: reporter::ScanStats {
             subdomains_found: 0,
             paths_found: 3,
+            parameters_found: 0,
             vulns_found: 1,
             duration_secs: 12.5,
         },
