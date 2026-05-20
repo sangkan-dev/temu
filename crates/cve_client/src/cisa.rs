@@ -43,7 +43,7 @@ pub async fn fetch_cisa_kev_with_cache(cache_dir: &Path) -> Result<Vec<String>, 
 pub async fn fetch_cisa_kev_with_base(url: &str) -> Result<Vec<String>, TemuError> {
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
-        .user_agent("Temu/1.1.1")
+        .user_agent("Temu/1.2.0")
         .build()
         .map_err(TemuError::from_network)?;
 

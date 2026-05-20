@@ -170,7 +170,7 @@ pub async fn grab_banner(ip: IpAddr, port: u16) -> Option<String> {
 fn probe_bytes(port: u16) -> &'static [u8] {
     match port {
         80 | 81 | 8000 | 8008 | 8080 | 8081 | 8443 | 8888 => {
-            b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.1.1\r\n\r\n"
+            b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.2.0\r\n\r\n"
         }
         25 | 587 => b"EHLO temu.local\r\n",
         _ => b"",
