@@ -75,6 +75,18 @@ jobs:
           chmod +x release/temu-*
           sha256sum release/* > release/SHA256SUMS
 
+      - name: Prepare release notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG_NAME#v}"
+          awk -v version="${VERSION}" '
+            $0 ~ "^## \\[" version "\\]" { print; in_section = 1; next }
+            in_section && $0 ~ "^## \\[" { exit }
+            in_section { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,5 +97,5 @@ jobs:
           else
             gh release create "${TAG_NAME}" release/* \
               --title "Temu ${TAG_NAME}" \
-              --notes-file CHANGELOG.md
+              --notes-file release-notes.md
           fi
