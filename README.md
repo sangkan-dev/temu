@@ -186,7 +186,9 @@ Temu can keep first-party rules in this repository and consume an external rules
 }
 ```
 
-The bundled `.github/workflows/update-rules.yml` cron workflow refreshes upstream Wappalyzer, FingerprintHub, and NVD snapshots into `rules/upstream/` and opens a pull request for review. Promote only validated, read-only detections into first-party Temu YAML rules.
+The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, and NVD snapshots into `upstream/` and opens a pull request for review. Promote only validated, read-only detections into first-party Temu YAML rules.
+
+See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
 
 ## Rule Safety
 

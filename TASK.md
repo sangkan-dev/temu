@@ -1178,7 +1178,7 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 ### 20.3 Release Preparation
 - [x] 🔴 Version bump ke `1.0.0`
 - [x] 🔴 Update CHANGELOG.md
-- [ ] 🔴 Tag git: `v1.0.0` (blocked: tag harus dibuat setelah commit final)
+- [x] 🔴 Tag git: `v1.0.0`
 - [x] 🟡 Binary release di GitHub Releases
 - [x] 🟡 README final: installation, usage, examples, contributing
 - [x] 🟢 Homebrew formula (macOS)
@@ -1188,7 +1188,7 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 - [x] Benchmark results documented
 - [x] No dependency vulnerabilities
 - [x] v1.0.0 release artifacts prepared
-- [ ] `v1.0.0` tag/release publish (blocked: requires final commit and GitHub release credentials)
+- [x] `v1.0.0` tag/release publish
 - **Project complete ✅**
 
 ---

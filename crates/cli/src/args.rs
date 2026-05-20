@@ -455,7 +455,7 @@ mod tests {
             "rules",
             "update",
             "--repo-url",
-            "https://raw.githubusercontent.com/sangkan-dev/sangkan-rules/main",
+            "https://raw.githubusercontent.com/sangkan-dev/temu-rules/main",
         ])
         .expect("rules update must parse");
         match cli.command {
@@ -465,8 +465,7 @@ mod tests {
                 assert_eq!(
                     repo_url,
                     Some(
-                        "https://raw.githubusercontent.com/sangkan-dev/sangkan-rules/main"
-                            .to_string()
+                        "https://raw.githubusercontent.com/sangkan-dev/temu-rules/main".to_string()
                     )
                 );
             }

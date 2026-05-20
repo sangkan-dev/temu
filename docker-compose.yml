@@ -3,11 +3,11 @@ services:
     build: .
     image: sangkan-temu:local
     volumes:
-      - ./results:/app/results
-      - ./rules:/app/rules
-      - ./dictionaries:/app/dictionaries:ro
-      - ./config:/app/config:ro
-      - ./templates:/app/templates:ro
+      - ./results:/app/results:Z
+      - ./rules:/app/rules:Z
+      - ./dictionaries:/app/dictionaries:ro,Z
+      - ./config:/app/config:ro,Z
+      - ./templates:/app/templates:ro,Z
     command: ["--help"]
 
   redis:
@@ -28,11 +28,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./results:/app/results
-      - ./rules:/app/rules:ro
-      - ./dictionaries:/app/dictionaries:ro
-      - ./config:/app/config:ro
-      - ./templates:/app/templates:ro
+      - ./results:/app/results:Z
+      - ./rules:/app/rules:ro,Z
+      - ./dictionaries:/app/dictionaries:ro,Z
+      - ./config:/app/config:ro,Z
+      - ./templates:/app/templates:ro,Z
     command: ["worker", "--redis", "redis://redis:6379", "--ports", "80,443,8080"]
 
   temu-coordinator:
@@ -42,12 +42,12 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./results:/app/results
-      - ./benchmark:/app/benchmark:ro
-      - ./rules:/app/rules:ro
-      - ./dictionaries:/app/dictionaries:ro
-      - ./config:/app/config:ro
-      - ./templates:/app/templates:ro
+      - ./results:/app/results:Z
+      - ./benchmark:/app/benchmark:ro,Z
+      - ./rules:/app/rules:ro,Z
+      - ./dictionaries:/app/dictionaries:ro,Z
+      - ./config:/app/config:ro,Z
+      - ./templates:/app/templates:ro,Z
     command:
       ["coordinator", "--redis", "redis://redis:6379", "--list", "/app/benchmark/targets.compose.txt"]
 
