@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(
     name = "temu",
-    version = "1.0.1",
+    version = "1.1.0",
     author = "Temu Security",
     about = "Automated cybersecurity scanner"
 )]
@@ -148,7 +148,7 @@ pub enum CveCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum RulesCommand {
-    /// Download fingerprint, vulnerability, and network rules into the local rules directory
+    /// Download fingerprint, vulnerability, network rules, and dictionaries into local directories
     Update {
         /// Raw GitHub-compatible repository base URL.
         #[arg(long)]

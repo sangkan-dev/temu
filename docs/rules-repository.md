@@ -37,7 +37,7 @@ temu-rules/
 
 ## Manifest
 
-`temu rules update` reads `rules-manifest.json` from the raw repository base URL.
+`temu rules update` reads `rules-manifest.json` from the raw repository base URL. Rules are written to `rules_dir`; dictionary files are written to `dictionaries_dir`.
 
 ```json
 {
@@ -51,6 +51,12 @@ temu-rules/
     "network/ssh.yaml",
     "network/tls.yaml",
     "network/http-banner.yaml"
+  ],
+  "dictionaries": [
+    "dictionaries/paths-small.txt",
+    "dictionaries/parameters-small.txt",
+    "dictionaries/subdomains-small.txt",
+    "dictionaries/subdomains-medium.txt"
   ]
 }
 ```
@@ -62,7 +68,7 @@ The cron workflow belongs in `temu-rules`, not in `temu`.
 `update-rules.yml` should:
 
 - Run on `schedule` and `workflow_dispatch`.
-- Fetch upstream fingerprints/CVE/network references into `upstream/`.
+- Fetch upstream fingerprints/CVE/network/dictionary references into `upstream/`.
 - Validate YAML/JSON syntax.
 - Open a pull request instead of committing directly to `main`.
 
@@ -71,7 +77,7 @@ The cron workflow belongs in `temu-rules`, not in `temu`.
 - Run on pull requests.
 - Validate YAML syntax.
 - Validate that first-party vulnerability and network rules use read-only payloads.
-- Validate `rules-manifest.json` paths exist.
+- Validate `rules-manifest.json` paths exist, including dictionary paths.
 
 ## Temu Integration
 

@@ -15,12 +15,15 @@ pub struct RemoteRulesManifest {
     pub vulnerability: Vec<String>,
     #[serde(default)]
     pub network: Vec<String>,
+    #[serde(default)]
+    pub dictionaries: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RulesUpdateSummary {
     pub repo_url: String,
-    pub written_files: Vec<PathBuf>,
+    pub written_rule_files: Vec<PathBuf>,
+    pub written_dictionary_files: Vec<PathBuf>,
 }
 
 /// Returns the default raw rules repository URL.
@@ -55,9 +58,10 @@ pub fn local_rule_filename(rule_path: &str) -> anyhow::Result<&str> {
 pub async fn update_rules_from_repo(
     repo_url: &str,
     rules_dir: &Path,
+    dictionaries_dir: &Path,
 ) -> anyhow::Result<RulesUpdateSummary> {
     let client = reqwest::Client::builder()
-        .user_agent("Temu/1.0.1 rules-updater")
+        .user_agent("Temu/1.1.0 rules-updater")
         .build()
         .with_context(|| "Failed to build rules update HTTP client")?;
 
@@ -77,23 +81,34 @@ pub async fn update_rules_from_repo(
     tokio::fs::create_dir_all(rules_dir)
         .await
         .with_context(|| format!("Failed to create rules directory {rules_dir:?}"))?;
+    tokio::fs::create_dir_all(dictionaries_dir)
+        .await
+        .with_context(|| format!("Failed to create dictionaries directory {dictionaries_dir:?}"))?;
 
-    let mut written_files = Vec::new();
+    let mut written_rule_files = Vec::new();
     if let Some(fingerprint_path) = manifest.fingerprint.as_deref() {
         let destination = rules_dir.join("fingerprint_rules.yaml");
         download_rule(&client, repo_url, fingerprint_path, &destination).await?;
-        written_files.push(destination);
+        written_rule_files.push(destination);
     }
 
     for rule_path in manifest.vulnerability.iter().chain(manifest.network.iter()) {
         let destination = rules_dir.join(local_rule_filename(rule_path)?);
         download_rule(&client, repo_url, rule_path, &destination).await?;
-        written_files.push(destination);
+        written_rule_files.push(destination);
+    }
+
+    let mut written_dictionary_files = Vec::new();
+    for dictionary_path in &manifest.dictionaries {
+        let destination = dictionaries_dir.join(local_rule_filename(dictionary_path)?);
+        download_rule(&client, repo_url, dictionary_path, &destination).await?;
+        written_dictionary_files.push(destination);
     }
 
     Ok(RulesUpdateSummary {
         repo_url: repo_url.to_string(),
-        written_files,
+        written_rule_files,
+        written_dictionary_files,
     })
 }
 
@@ -124,13 +139,17 @@ async fn download_rule(
 mod tests {
     use super::*;
 
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
     #[test]
     fn test_parse_manifest_accepts_general_rule_types() {
         let manifest = parse_manifest(
             r#"{
                 "fingerprint": "fingerprint/technologies.yaml",
                 "vulnerability": ["vulnerability/sql-injection.yaml"],
-                "network": ["network/ssh.yaml", "network/tls.yaml"]
+                "network": ["network/ssh.yaml", "network/tls.yaml"],
+                "dictionaries": ["dictionaries/paths-small.txt"]
             }"#,
         )
         .expect("manifest must parse");
@@ -141,6 +160,7 @@ mod tests {
         );
         assert_eq!(manifest.vulnerability.len(), 1);
         assert_eq!(manifest.network.len(), 2);
+        assert_eq!(manifest.dictionaries.len(), 1);
     }
 
     #[test]
@@ -154,5 +174,55 @@ mod tests {
         let filename =
             local_rule_filename("vulnerability/cve/2026.yaml").expect("basename must be extracted");
         assert_eq!(filename, "2026.yaml");
+    }
+
+    #[tokio::test]
+    async fn test_update_rules_downloads_dictionaries() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rules-manifest.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "fingerprint": "fingerprint/fingerprint_rules.yaml",
+                "vulnerability": ["vulnerability/sql-injection.yaml"],
+                "network": ["network/ssh.yaml"],
+                "dictionaries": ["dictionaries/paths-small.txt"]
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/fingerprint/fingerprint_rules.yaml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]\n"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/vulnerability/sql-injection.yaml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("id: test\n"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/network/ssh.yaml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("id: ssh\n"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/dictionaries/paths-small.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("admin\nlogin\n"))
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir must be created");
+        let rules_dir = temp_dir.path().join("rules");
+        let dictionaries_dir = temp_dir.path().join("dictionaries");
+
+        let summary = update_rules_from_repo(&server.uri(), &rules_dir, &dictionaries_dir)
+            .await
+            .expect("rules update must succeed");
+
+        assert_eq!(summary.written_rule_files.len(), 3);
+        assert_eq!(summary.written_dictionary_files.len(), 1);
+        assert!(rules_dir.join("fingerprint_rules.yaml").is_file());
+        assert!(rules_dir.join("sql-injection.yaml").is_file());
+        assert!(rules_dir.join("ssh.yaml").is_file());
+        assert!(dictionaries_dir.join("paths-small.txt").is_file());
     }
 }

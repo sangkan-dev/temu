@@ -23,7 +23,7 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 Download a release binary:
 
 ```bash
-curl -L https://github.com/sangkan-dev/temu/releases/download/v1.0.1/temu-linux-x86_64-static \
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.1.0/temu-linux-x86_64-static \
   -o temu-linux-x86_64-static
 chmod +x temu-linux-x86_64-static
 ./temu-linux-x86_64-static --help
@@ -32,7 +32,7 @@ chmod +x temu-linux-x86_64-static
 Verify the checksum:
 
 ```bash
-curl -L https://github.com/sangkan-dev/temu/releases/download/v1.0.1/SHA256SUMS \
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.1.0/SHA256SUMS \
   -o SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
@@ -129,7 +129,7 @@ cargo run -p cli -- cve update
 cargo run -p cli -- cve update --cpe cpe:2.3:a:nginx:nginx:1.18.0:*:*:*:*:*:*:*
 ```
 
-Update local detection rules from a rules-as-code repository:
+Update local detection rules and dictionaries from a rules-as-code repository:
 
 ```bash
 cargo run -p cli -- rules update
@@ -164,7 +164,7 @@ Default configuration lives in `config/default.toml`:
 rate_limit = 50
 timeout_secs = 10
 concurrency = 100
-user_agent = "Temu/1.0.1"
+user_agent = "Temu/1.1.0"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
@@ -208,11 +208,12 @@ Temu can keep first-party rules in this repository and consume an external rules
 {
   "fingerprint": "fingerprint/fingerprint_rules.yaml",
   "vulnerability": ["vulnerability/sql-injection.yaml"],
-  "network": ["network/ssh.yaml"]
+  "network": ["network/ssh.yaml"],
+  "dictionaries": ["dictionaries/paths-small.txt"]
 }
 ```
 
-The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, and NVD snapshots into `upstream/` and opens a pull request for review. Promote only validated, read-only detections into first-party Temu YAML rules.
+The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD snapshots, and dictionary sources into `upstream/` and opens a pull request for review. Promote only validated, read-only detections and reviewed dictionaries into first-party Temu files.
 
 See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
 

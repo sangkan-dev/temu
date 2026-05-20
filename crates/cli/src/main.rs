@@ -189,10 +189,17 @@ async fn main() -> anyhow::Result<()> {
                     .or_else(|| std::env::var("TEMU_RULES_REPO_URL").ok())
                     .unwrap_or_else(|| rules_update::default_rules_repo_url().to_string());
                 eprintln!("[*] Updating detection rules from {repo_url}");
-                let summary = rules_update::update_rules_from_repo(&repo_url, &config.rules_dir)
-                    .await
-                    .with_context(|| "Failed to update detection rules")?;
-                for path in summary.written_files {
+                let summary = rules_update::update_rules_from_repo(
+                    &repo_url,
+                    &config.rules_dir,
+                    &config.dictionaries_dir,
+                )
+                .await
+                .with_context(|| "Failed to update detection rules")?;
+                for path in summary.written_rule_files {
+                    println!("{}", path.display());
+                }
+                for path in summary.written_dictionary_files {
                     println!("{}", path.display());
                 }
             }

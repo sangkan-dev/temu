@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-05-20
+
+Rules-as-code update for dictionaries.
+
+### Added
+
+- `temu rules update` now supports a `dictionaries` manifest section and downloads reviewed dictionary files into the configured dictionaries directory.
+- The release documentation now shows binary usage and dictionary-aware rules updates.
+
 ## [1.0.1] — 2026-05-20
 
 Patch release for the Linux static binary.
