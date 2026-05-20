@@ -37,7 +37,7 @@ pub async fn probe_http(host: &str, timeout: Duration) -> Option<ProbeResult> {
         .timeout(timeout)
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent("Temu/1.1.0")
+        .user_agent("Temu/1.1.1")
         .pool_idle_timeout(Duration::from_secs(90))
         .pool_max_idle_per_host(8)
         .build()

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(
     name = "temu",
-    version = "1.1.0",
+    version = "1.1.1",
     author = "Temu Security",
     about = "Automated cybersecurity scanner"
 )]

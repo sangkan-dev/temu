@@ -6,6 +6,7 @@ use chrono::Utc;
 use discovery::{DiscoveryMode, PortResult, default_top_ports, run_discovery, scan_ports};
 use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
+use hickory_resolver::TokioResolver;
 use reporter::types::{ScanResult, ScanStats, TargetSummary};
 use temu_core::{AppConfig, Asset, AssetType, Severity, Target};
 use tracing::info;
@@ -385,15 +386,23 @@ async fn run_port_scan_for_domain(
     ports: &[u16],
     config: &AppConfig,
 ) -> (Vec<Asset>, Vec<(String, TechStack)>) {
-    let Ok(mut addrs) = tokio::net::lookup_host((domain, 0)).await else {
+    let Ok(builder) = TokioResolver::builder_tokio() else {
+        tracing::warn!("Port scan skipped: could not initialize DNS resolver for {domain}");
+        return (Vec::new(), Vec::new());
+    };
+    let Ok(resolver) = builder.build() else {
+        tracing::warn!("Port scan skipped: could not build DNS resolver for {domain}");
+        return (Vec::new(), Vec::new());
+    };
+    let Ok(response) = resolver.lookup_ip(domain).await else {
         tracing::warn!("Port scan skipped: could not resolve {domain}");
         return (Vec::new(), Vec::new());
     };
-    let Some(addr) = addrs.next() else {
+    let Some(ip) = response.iter().next() else {
         return (Vec::new(), Vec::new());
     };
 
-    run_port_scan_for_ip(addr.ip(), ports, config).await
+    run_port_scan_for_ip(ip, ports, config).await
 }
 
 async fn run_port_scan_for_ip(

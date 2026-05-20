@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.1] — 2026-05-20
+
+Patch release for the Linux static binary scan pipeline.
+
+### Fixed
+
+- Replaced the remaining `tokio::net::lookup_host` call in domain port scanning with `hickory-resolver`, avoiding glibc NSS loading in the static Linux binary during `scan single`.
+- Normalized fuzzing dictionary path entries that do not start with `/`, so external dictionary updates cannot produce malformed URLs such as `https://example.comadmin`.
+
 ## [1.1.0] — 2026-05-20
 
 Rules-as-code update for dictionaries.

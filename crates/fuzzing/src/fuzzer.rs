@@ -25,7 +25,8 @@ async fn probe_path(
     base_url: &str,
     path: &str,
 ) -> Option<FuzzResult> {
-    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    let normalized_path = normalize_path(path);
+    let url = format!("{}{}", base_url.trim_end_matches('/'), normalized_path);
     debug!("Fuzzing {url}");
 
     let parsed = Url::parse(&url).ok();
@@ -48,12 +49,20 @@ async fn probe_path(
 
     Some(FuzzResult {
         url,
-        path: path.to_string(),
+        path: normalized_path,
         status_code,
         content_length,
         content_type,
         redirect_url,
     })
+}
+
+fn normalize_path(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
 }
 
 async fn probe_url(
@@ -454,6 +463,34 @@ mod tests {
                 .iter()
                 .any(|r| r.path == "/login" && r.status_code == 302)
         );
+    }
+
+    #[tokio::test]
+    async fn test_fuzz_paths_normalizes_missing_leading_slash() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(wm_path(BASELINE_PATH))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not Found"))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(wm_path("/admin"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("admin"))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not Found"))
+            .mount(&mock_server)
+            .await;
+
+        let results = fuzz_paths(&mock_server.uri(), &["admin".to_string()], &test_config()).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, "/admin");
+        assert!(results[0].url.ends_with("/admin"));
     }
 
     #[tokio::test]
