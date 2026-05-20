@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.1] — 2026-05-20
+
+Patch release for the Linux static binary.
+
+### Fixed
+
+- Enabled the Rust DNS resolver in `reqwest` so the static Linux binary does not enter glibc NSS DNS loading during HTTPS requests. This fixes a `SIGFPE` crash observed when running `temu rules update` from the release binary.
+
+### Documentation
+
+- Added release binary installation and usage examples.
+
 ## [1.0.0] — 2026-05-20
 
 First complete release candidate for the Temu scanner.

@@ -20,12 +20,33 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 
 ## Install
 
-Requirements:
+Download a release binary:
+
+```bash
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.0.1/temu-linux-x86_64-static \
+  -o temu-linux-x86_64-static
+chmod +x temu-linux-x86_64-static
+./temu-linux-x86_64-static --help
+```
+
+Verify the checksum:
+
+```bash
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.0.1/SHA256SUMS \
+  -o SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Available release assets:
+
+- `temu-linux-x86_64-static`
+- `temu-macos-arm64`
+- `SHA256SUMS`
+
+Build from source:
 
 - Rust stable with edition 2024 support.
 - Cargo.
-
-Build:
 
 ```bash
 cargo build
@@ -43,10 +64,13 @@ cargo build
 
 ## Usage
 
+When using a downloaded binary, replace `cargo run -p cli --` with the downloaded executable path, for example `./temu-linux-x86_64-static`.
+
 Single target:
 
 ```bash
 cargo run -p cli -- scan single --url https://target.example.com
+./temu-linux-x86_64-static scan single --url https://target.example.com
 ```
 
 Single target with options:
@@ -111,6 +135,8 @@ Update local detection rules from a rules-as-code repository:
 cargo run -p cli -- rules update
 cargo run -p cli -- rules update \
   --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
+./temu-linux-x86_64-static rules update \
+  --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
 ```
 
 Discovery modes:
@@ -138,7 +164,7 @@ Default configuration lives in `config/default.toml`:
 rate_limit = 50
 timeout_secs = 10
 concurrency = 100
-user_agent = "Temu/1.0.0"
+user_agent = "Temu/1.0.1"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"

@@ -31,7 +31,7 @@ pub async fn fetch_crtsh_with_base(domain: &str, base_url: &str) -> Result<Vec<S
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
-        .user_agent("Temu/1.0.0")
+        .user_agent("Temu/1.0.1")
         .build()
         .map_err(|e| TemuError::Network(e.to_string()))?;
 

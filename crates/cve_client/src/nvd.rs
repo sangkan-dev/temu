@@ -25,7 +25,7 @@ pub async fn fetch_cves_from_nvd_with_base(
 ) -> Result<Vec<CveEntry>, TemuError> {
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
-        .user_agent("Temu/1.0.0")
+        .user_agent("Temu/1.0.1")
         .build()
         .map_err(TemuError::from_network)?;
 

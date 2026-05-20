@@ -291,7 +291,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "cve_client"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "fingerprint",
@@ -496,10 +496,10 @@ dependencies = [
 
 [[package]]
 name = "discovery"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
- "hickory-resolver",
+ "hickory-resolver 0.26.1",
  "regex",
  "reqwest",
  "serde",
@@ -535,6 +535,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "enum-as-inner"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1e6a265c649f3f5979b601d26f1d05ada116434c87741c9493cb56218f76cbc"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -579,7 +591,7 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fingerprint"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "rayon",
@@ -716,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "fuzzing"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "reqwest",
@@ -878,11 +890,36 @@ dependencies = [
  "futures-channel",
  "futures-io",
  "futures-util",
- "hickory-proto",
+ "hickory-proto 0.26.1",
  "idna",
  "ipnet",
  "jni",
  "rand 0.10.1",
+ "thiserror",
+ "tinyvec",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "hickory-proto"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8a6fe56c0038198998a6f217ca4e7ef3a5e51f46163bd6dd60b5c71ca6c6502"
+dependencies = [
+ "async-trait",
+ "cfg-if",
+ "data-encoding",
+ "enum-as-inner",
+ "futures-channel",
+ "futures-io",
+ "futures-util",
+ "idna",
+ "ipnet",
+ "once_cell",
+ "rand 0.9.4",
+ "ring",
  "thiserror",
  "tinyvec",
  "tokio",
@@ -912,6 +949,27 @@ dependencies = [
 
 [[package]]
 name = "hickory-resolver"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc62a9a99b0bfb44d2ab95a7208ac952d31060efc16241c87eaf36406fecf87a"
+dependencies = [
+ "cfg-if",
+ "futures-util",
+ "hickory-proto 0.25.2",
+ "ipconfig",
+ "moka",
+ "once_cell",
+ "parking_lot",
+ "rand 0.9.4",
+ "resolv-conf",
+ "smallvec",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "hickory-resolver"
 version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0d58d28879ceecde6607729660c2667a081ccdc082e082675042793960f178c"
@@ -919,7 +977,7 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "hickory-net",
- "hickory-proto",
+ "hickory-proto 0.26.1",
  "ipconfig",
  "ipnet",
  "jni",
@@ -1998,7 +2056,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "reporter"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "fingerprint",
@@ -2021,6 +2079,7 @@ dependencies = [
  "base64",
  "bytes",
  "futures-core",
+ "hickory-resolver 0.25.2",
  "http",
  "http-body",
  "http-body-util",
@@ -2029,6 +2088,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -2466,7 +2526,7 @@ dependencies = [
 
 [[package]]
 name = "temu_core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "serde",
@@ -2901,7 +2961,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "verifier"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "regex",
@@ -2923,7 +2983,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vulnerability"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "fingerprint",
