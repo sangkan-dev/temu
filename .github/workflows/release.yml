@@ -6,6 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   linux-static:
     name: Linux x86_64 static
@@ -45,3 +51,39 @@ jobs:
         with:
           name: temu-macos-arm64
           path: target/aarch64-apple-darwin/release/temu
+
+  github-release:
+    name: GitHub Release
+    needs:
+      - linux-static
+      - macos-arm64
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp dist/temu-linux-x86_64-static/temu release/temu-linux-x86_64-static
+          cp dist/temu-macos-arm64/temu release/temu-macos-arm64
+          chmod +x release/temu-*
+          sha256sum release/* > release/SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" release/* --clobber
+          else
+            gh release create "${TAG_NAME}" release/* \
+              --title "Temu ${TAG_NAME}" \
+              --notes-file CHANGELOG.md
+          fi
