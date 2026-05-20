@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0] — 2026-05-20
+
+Feature release for risk-aware rules and expanded rules-as-code automation.
+
+### Added
+
+- Added `risk_level` and `requires_confirmation` metadata for vulnerability rules.
+- Added `--allow-risky-rules` and `TEMU_ALLOW_RISKY_RULES=true` opt-in controls for intrusive, destructive, or DoS-prone rules.
+- Added bundled OWASP Juice Shop, Angular Material, and exposed Prometheus metrics detection coverage.
+- Expanded `temu-rules` automation to promote low-risk upstream fingerprint and dictionary updates into active rule files.
+
+### Changed
+
+- Risky rules are loaded but skipped by default unless the operator explicitly opts in.
+- Rules-as-code documentation now distinguishes safe default rules from operator-accepted risky probes.
+
+### Fixed
+
+- Tightened the Django fingerprint rule to avoid matching generic `X-Frame-Options: SAMEORIGIN` headers as Django.
+
 ## [1.1.1] — 2026-05-20
 
 Patch release for the Linux static binary scan pipeline.
