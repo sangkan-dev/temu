@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
                 wordlist_size,
                 wordlist,
                 ports,
+                allow_risky_rules,
             } => {
                 // Validate URL early
                 reqwest::Url::parse(&url).with_context(|| format!("Invalid URL: {url}"))?;
@@ -52,6 +53,12 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if let Some(t) = timeout {
                     config.timeout_secs = t;
+                }
+                if allow_risky_rules {
+                    eprintln!(
+                        "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
+                    );
+                    config.allow_risky_rules = true;
                 }
                 let output_dir = output.unwrap_or_else(|| config.output_dir.clone());
 
@@ -92,9 +99,19 @@ async fn main() -> anyhow::Result<()> {
 
                 print_report_paths(&write_report_set(&result, &output_dir)?);
             }
-            ScanCommand::File { list } => {
+            ScanCommand::File {
+                list,
+                allow_risky_rules,
+            } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
-                let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                let mut config =
+                    temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                if allow_risky_rules {
+                    eprintln!(
+                        "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
+                    );
+                    config.allow_risky_rules = true;
+                }
                 let selected_ports = default_top_ports();
                 let result = orchestrator::run_file_scan(
                     &list,
@@ -106,9 +123,20 @@ async fn main() -> anyhow::Result<()> {
                 .with_context(|| "File list scan failed")?;
                 write_multi_target_reports(&result, &config.output_dir)?;
             }
-            ScanCommand::Network { cidr, ports } => {
+            ScanCommand::Network {
+                cidr,
+                ports,
+                allow_risky_rules,
+            } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
-                let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                let mut config =
+                    temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                if allow_risky_rules {
+                    eprintln!(
+                        "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
+                    );
+                    config.allow_risky_rules = true;
+                }
                 let selected_ports = match ports {
                     Some(ports) => parse_ports(&ports)
                         .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,

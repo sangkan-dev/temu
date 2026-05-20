@@ -179,6 +179,7 @@ mod tests {
             dictionaries_dir: PathBuf::from("/tmp"),
             max_recursion_depth: 2,
             wordlist_override: None,
+            allow_risky_rules: false,
         };
         let cpe = "cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*";
         let conn = init_database(&default_db_path(&config)).unwrap();

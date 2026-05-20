@@ -112,8 +112,6 @@
   confidence: 0.75
   cookies:
     csrftoken: ".*"
-  headers:
-    X-Frame-Options: "(?i)SAMEORIGIN"
 
 - name: Laravel
   category: Framework
@@ -297,6 +295,26 @@
     - "ng-version="
     - "angular.min.js"
     - "ng-app"
+    - "<app-root"
+    - "polyfills\\.js"
+    - "main\\.js[^A-Za-z0-9_]"
+
+- name: Angular Material
+  category: Library
+  confidence: 0.75
+  body:
+    - "--mat-sys-"
+    - "mat-mdc-"
+  implies: ["Angular"]
+
+- name: OWASP Juice Shop
+  category: Other
+  confidence: 0.99
+  body:
+    - "OWASP Juice Shop"
+    - "Probably the most modern and sophisticated insecure web application"
+    - "assets/public/favicon_js\\.ico"
+  implies: ["Angular", "Angular Material", "Node.js", "Express"]
 
 - name: Lodash
   category: Library

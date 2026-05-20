@@ -14,6 +14,7 @@ fn make_config(dictionaries_dir: PathBuf) -> AppConfig {
         dictionaries_dir,
         max_recursion_depth: 2,
         wordlist_override: None,
+        allow_risky_rules: false,
     }
 }
 

@@ -13,7 +13,7 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 - IPv4 CIDR scan with TCP port scanning and banner collection.
 - Distributed scanning with Redis-backed workers.
 - CVE lookup from NVD/CISA KEV with SQLite cache.
-- YAML vulnerability rules with read-only payloads.
+- YAML vulnerability rules with explicit risk levels.
 - Rules-as-code updates from a raw GitHub-compatible rules repository.
 - Advanced detections for time-based SQL injection, SSRF indicators, path traversal, open redirect, and missing security headers.
 - JSON, HTML, and PDF reports.
@@ -71,6 +71,14 @@ Single target:
 ```bash
 cargo run -p cli -- scan single --url https://target.example.com
 ./temu-linux-x86_64-static scan single --url https://target.example.com
+```
+
+Rules marked as intrusive, destructive, DoS-prone, or requiring explicit confirmation are skipped by default. Enable them only when you accept the target and scanner-side risk:
+
+```bash
+./temu-linux-x86_64-static scan single \
+  --url https://target.example.com \
+  --allow-risky-rules
 ```
 
 Single target with options:
@@ -169,6 +177,7 @@ output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
 max_recursion_depth = 2
+allow_risky_rules = false
 ```
 
 Environment overrides:
@@ -181,6 +190,7 @@ Environment overrides:
 - `TEMU_RULES_DIR`
 - `TEMU_DICTIONARIES_DIR`
 - `TEMU_MAX_RECURSION_DEPTH`
+- `TEMU_ALLOW_RISKY_RULES`
 - `TEMU_RULES_REPO_URL` for `temu rules update`
 
 ## Docker
@@ -213,13 +223,24 @@ Temu can keep first-party rules in this repository and consume an external rules
 }
 ```
 
-The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD snapshots, and dictionary sources into `upstream/` and opens a pull request for review. Promote only validated, read-only detections and reviewed dictionaries into first-party Temu files.
+The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD snapshots, and dictionary sources, promotes low-risk fingerprint and dictionary updates into active files, validates the repository, and opens a pull request. Rules that are intrusive, destructive, or DoS-prone can still be published, but they must declare `risk_level` or `requires_confirmation` so Temu only executes them after explicit user opt-in.
 
 See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
 
 ## Rule Safety
 
-Rules in `rules/` must use read-only payloads. Do not add payloads that modify data, execute commands, create files, start outbound callbacks, or intentionally deny service.
+Rules in `rules/` declare execution risk. `safe` rules run by default. Rules with `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, `requires_confirmation: true`, or payloads that look destructive are skipped unless the user enables `--allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
+
+Rule authors can use:
+
+```yaml
+risk_level: intrusive
+requires_confirmation: true
+```
+
+Risky rules may modify state, execute heavier probes, or stress a target. Use them only on systems you are authorized to test and when you accept all resulting risk.
+
+Safe bundled rules should still prefer read-only payloads.
 
 Allowed examples include:
 

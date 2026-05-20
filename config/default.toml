@@ -6,3 +6,4 @@ output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
 max_recursion_depth = 2
+allow_risky_rules = false

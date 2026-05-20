@@ -69,6 +69,8 @@ The cron workflow belongs in `temu-rules`, not in `temu`.
 
 - Run on `schedule` and `workflow_dispatch`.
 - Fetch upstream fingerprints/CVE/network/dictionary references into `upstream/`.
+- Promote low-risk fingerprint and dictionary updates into active files.
+- Publish candidate or active vulnerability rules with explicit `risk_level` metadata.
 - Validate YAML/JSON syntax.
 - Open a pull request instead of committing directly to `main`.
 
@@ -76,7 +78,7 @@ The cron workflow belongs in `temu-rules`, not in `temu`.
 
 - Run on pull requests.
 - Validate YAML syntax.
-- Validate that first-party vulnerability and network rules use read-only payloads.
+- Validate that first-party vulnerability and network rules declare risk correctly.
 - Validate `rules-manifest.json` paths exist, including dictionary paths.
 
 ## Temu Integration
@@ -94,5 +96,11 @@ temu rules update
 temu rules update --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
 TEMU_RULES_REPO_URL=https://raw.githubusercontent.com/example/custom-temu-rules/main temu rules update
 ```
+
+Risk policy:
+
+- `risk_level: safe` rules run by default.
+- `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, or `requires_confirmation: true` rules require `temu scan ... --allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
+- NVD data should be used freely for metadata and candidate generation, but active probes must still carry a risk label because NVD does not distinguish read-only checks from crash, write, or RCE validation paths.
 
 The engine repository should keep `.github/workflows/release.yml` and other engine checks only.

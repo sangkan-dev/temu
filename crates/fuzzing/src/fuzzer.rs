@@ -410,6 +410,7 @@ mod tests {
             dictionaries_dir: PathBuf::from("/tmp"),
             max_recursion_depth: 2,
             wordlist_override: None,
+            allow_risky_rules: false,
         }
     }
 

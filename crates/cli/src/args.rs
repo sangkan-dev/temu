@@ -103,12 +103,20 @@ pub enum ScanCommand {
         /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
         #[arg(long)]
         ports: Option<String>,
+
+        /// Execute rules marked intrusive/destructive/DoS-prone.
+        #[arg(long)]
+        allow_risky_rules: bool,
     },
     /// Scan a list of targets from a file
     File {
         /// Path to file containing target URLs (one per line)
         #[arg(long)]
         list: std::path::PathBuf,
+
+        /// Execute rules marked intrusive/destructive/DoS-prone.
+        #[arg(long)]
+        allow_risky_rules: bool,
     },
     /// Scan an entire network CIDR
     Network {
@@ -119,6 +127,10 @@ pub enum ScanCommand {
         /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
         #[arg(long)]
         ports: Option<String>,
+
+        /// Execute rules marked intrusive/destructive/DoS-prone.
+        #[arg(long)]
+        allow_risky_rules: bool,
     },
 }
 
@@ -256,6 +268,31 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_single_allow_risky_rules_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://target.com",
+            "--allow-risky-rules",
+        ])
+        .expect("allow risky rules flag must parse");
+
+        match cli.command {
+            Command::Scan {
+                mode:
+                    ScanCommand::Single {
+                        allow_risky_rules, ..
+                    },
+            } => {
+                assert!(allow_risky_rules);
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
     fn test_default_discovery_mode_is_hybrid() {
         let cli = Cli::try_parse_from(["temu", "scan", "single", "--url", "https://example.com"])
             .unwrap();
@@ -324,7 +361,7 @@ mod tests {
             .expect("scan file must parse");
         match cli.command {
             Command::Scan {
-                mode: ScanCommand::File { list },
+                mode: ScanCommand::File { list, .. },
             } => {
                 assert_eq!(list, std::path::PathBuf::from("/tmp/targets.txt"));
             }
@@ -346,7 +383,7 @@ mod tests {
         .expect("scan network must parse");
         match cli.command {
             Command::Scan {
-                mode: ScanCommand::Network { cidr, ports },
+                mode: ScanCommand::Network { cidr, ports, .. },
             } => {
                 assert_eq!(cidr, "10.0.0.0/24");
                 assert_eq!(ports, Some("22,80-81".to_string()));

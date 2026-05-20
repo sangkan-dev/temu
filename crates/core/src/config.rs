@@ -28,6 +28,10 @@ pub struct AppConfig {
     /// takes precedence over the size-based preset from `dictionaries_dir`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wordlist_override: Option<PathBuf>,
+    /// Allows rules marked as intrusive, destructive, DoS-prone, or requiring
+    /// explicit confirmation to execute.
+    #[serde(default)]
+    pub allow_risky_rules: bool,
 }
 
 fn default_max_recursion_depth() -> usize {
@@ -46,6 +50,7 @@ impl Default for AppConfig {
             dictionaries_dir: PathBuf::from("./dictionaries"),
             max_recursion_depth: default_max_recursion_depth(),
             wordlist_override: None,
+            allow_risky_rules: false,
         }
     }
 }
@@ -73,7 +78,7 @@ impl AppConfig {
     /// Each field has a corresponding env var with the `TEMU_` prefix:
     /// `TEMU_RATE_LIMIT`, `TEMU_TIMEOUT_SECS`, `TEMU_CONCURRENCY`,
     /// `TEMU_USER_AGENT`, `TEMU_OUTPUT_DIR`, `TEMU_RULES_DIR`, `TEMU_DICTIONARIES_DIR`,
-    /// `TEMU_MAX_RECURSION_DEPTH`.
+    /// `TEMU_MAX_RECURSION_DEPTH`, `TEMU_ALLOW_RISKY_RULES`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
@@ -107,6 +112,12 @@ impl AppConfig {
             && let Ok(n) = v.parse()
         {
             self.max_recursion_depth = n;
+        }
+        if let Ok(v) = std::env::var("TEMU_ALLOW_RISKY_RULES") {
+            self.allow_risky_rules = matches!(
+                v.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "y" | "on"
+            );
         }
     }
 
@@ -144,6 +155,7 @@ mod tests {
         assert_eq!(config.rules_dir, PathBuf::from("./rules"));
         assert_eq!(config.dictionaries_dir, PathBuf::from("./dictionaries"));
         assert_eq!(config.max_recursion_depth, 2);
+        assert!(!config.allow_risky_rules);
     }
 
     #[test]
@@ -157,6 +169,7 @@ output_dir = "/tmp/results"
 rules_dir = "/tmp/rules"
 dictionaries_dir = "/tmp/dicts"
 max_recursion_depth = 3
+allow_risky_rules = true
 "#;
         let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         tmp.write_all(toml_content.as_bytes()).unwrap();
@@ -167,6 +180,7 @@ max_recursion_depth = 3
         assert_eq!(config.concurrency, 200);
         assert_eq!(config.user_agent, "Temu/0.2.0");
         assert_eq!(config.max_recursion_depth, 3);
+        assert!(config.allow_risky_rules);
     }
 
     #[test]

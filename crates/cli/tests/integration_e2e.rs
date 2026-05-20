@@ -19,6 +19,7 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         dictionaries_dir,
         max_recursion_depth: 2,
         wordlist_override: None,
+        allow_risky_rules: false,
     }
 }
 
