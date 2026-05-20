@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-05-20
+
+Patch release for vulnerability detection precision.
+
+### Fixed
+
+- `StatusCode` verification now honors optional body and header matchers, preventing SPA fallback pages from being reported as exposed files.
+- Root-relative path probes such as `/.env` and `/metrics` now execute once against the origin root instead of being appended to every discovered path.
+- Query-parameter rules now skip URLs without parameters unless the rule declares an explicit `injection_name`.
+- Security-header findings are reported once for the root URL asset instead of repeated for every discovered path.
+- Tightened Windows path traversal and SSRF regexes to avoid matching normal `security.txt` content.
+
 ## [1.2.0] — 2026-05-20
 
 Feature release for risk-aware rules and expanded rules-as-code automation.
