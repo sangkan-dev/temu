@@ -1193,6 +1193,284 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 
 ---
 
+## Fase 5 — Advanced Value Roadmap (Post-v1)
+
+**Goal:** Menaikkan value Temu dari scanner CLI menjadi platform assessment yang lebih adaptif: mampu memahami aplikasi modern, API, realtime workflow, rule ecosystem, dan prioritisasi risiko lintas web + network.
+
+Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-limited, dan detection-first. Fitur intrusive/OAST/stateful/risky harus tetap opt-in eksplisit, diberi label risiko, dan tercatat di report.
+
+---
+
+## Sprint 21 — Browser-Aware Crawling & SPA Discovery
+
+**Goal:** Tambahkan crawler berbasis browser/headless agar Temu bisa memahami aplikasi modern yang banyak route/API-nya muncul dari JavaScript.
+
+### 21.1 Headless Browser Engine
+- [ ] 🔴 Evaluasi Rust-native CDP/WebDriver client untuk Chromium/Chrome
+- [ ] 🔴 Jalankan render halaman target dengan scope enforcement
+- [ ] 🔴 Ambil DOM route, anchor, form, script, stylesheet, dan asset URL
+- [ ] 🟡 Tangkap network request dari browser untuk endpoint API yang tidak muncul di HTML awal
+- [ ] 🟡 Support timeout, max depth, max pages, dan max same-route repeat
+
+### 21.2 SPA Route & Source Analysis
+- [ ] 🔴 Ekstrak route dari bundle JavaScript secara statis
+- [ ] 🟡 Deteksi framework SPA: Angular, React, Vue, Next.js, Nuxt, SvelteKit
+- [ ] 🟡 Deteksi sourcemap publik dan secret-like strings di bundle JS
+- [ ] 🟢 Normalisasi route dinamis seperti `/users/:id`, `/product/{id}`, dan `/#/score-board`
+
+### 🏁 Sprint 21 — Definition of Done
+- Temu bisa menemukan endpoint dari aplikasi SPA tanpa hanya bergantung pada HTML awal
+- Crawler tidak keluar scope target
+- Output crawler masuk ke report JSON/HTML/PDF
+
+---
+
+## Sprint 22 — API Discovery (OpenAPI, GraphQL, gRPC Gateway)
+
+**Goal:** Jadikan Temu lebih kuat untuk target API-first, bukan hanya website biasa.
+
+### 22.1 OpenAPI & Swagger
+- [ ] 🔴 Fuzz common spec paths: `/openapi.json`, `/swagger.json`, `/api-docs`, `/v3/api-docs`
+- [ ] 🔴 Parse OpenAPI 3.x dan Swagger 2.0 menjadi endpoint scan targets
+- [ ] 🟡 Generate safe parameter probes dari schema request/query/path
+- [ ] 🟡 Tandai endpoint auth-required, deprecated, dan high-risk operation
+
+### 22.2 GraphQL
+- [ ] 🔴 Deteksi endpoint GraphQL umum: `/graphql`, `/api/graphql`, `/graphiql`
+- [ ] 🟡 Introspection check dengan mode aman dan opt-in untuk query lebih agresif
+- [ ] 🟡 Rule untuk common GraphQL issues: introspection exposed, verbose errors, batching abuse signal
+
+### 22.3 API Evidence
+- [ ] 🟡 Simpan contoh request/response minimal sebagai evidence
+- [ ] 🟢 Tampilkan API surface summary di report
+
+### 🏁 Sprint 22 — Definition of Done
+- Temu bisa mengubah OpenAPI/Swagger menjadi target scan
+- GraphQL exposure terdeteksi dengan risk label yang jelas
+- API findings masuk ke report dengan evidence yang bisa diaudit
+
+---
+
+## Sprint 23 — Authenticated Scanning & Session Profiles
+
+**Goal:** Support scan area yang butuh login/session tanpa hardcode credential di source.
+
+### 23.1 Session Profile
+- [ ] 🔴 Support session profile file berisi cookie, header, bearer token, dan base URL scope
+- [ ] 🔴 Support env var untuk secrets/token agar tidak tersimpan di repo
+- [ ] 🟡 Validasi session sebelum scan dengan endpoint health/profile
+- [ ] 🟡 Auto-refresh token via configurable command atau HTTP refresh flow
+
+### 23.2 Authenticated Crawling
+- [ ] 🔴 Terapkan session profile ke discovery, browser crawler, fuzzing, vulnerability rules
+- [ ] 🟡 Deteksi logout/destructive links dan skip secara default
+- [ ] 🟡 CSRF token extraction untuk form scan read-only
+- [ ] 🟢 Multi-role scan profile untuk membandingkan akses user/admin
+
+### 🏁 Sprint 23 — Definition of Done
+- Temu bisa scan target authenticated tanpa menyimpan secret di source code
+- Session expiry dan logout accidental bisa ditangani
+- Report menjelaskan profile auth yang dipakai tanpa membocorkan secret
+
+---
+
+## Sprint 24 — WebSocket Runtime & Frontend Foundation
+
+**Goal:** Siapkan fondasi realtime supaya Temu bisa punya frontend/dashboard tanpa mengorbankan CLI.
+
+### 24.1 Realtime Scan Events
+- [ ] 🔴 Tambahkan event bus internal untuk lifecycle scan: queued, discovery, fingerprint, fuzzing, vuln, verifier, report
+- [ ] 🔴 Tambahkan WebSocket server opt-in: `temu serve --bind 127.0.0.1:8787`
+- [ ] 🔴 Definisikan schema event stabil: progress, finding, log, error, artifact, worker status
+- [ ] 🟡 Support pause, resume, cancel untuk scan berjalan
+- [ ] 🟡 Persist event stream ringkas agar frontend bisa reconnect
+
+### 24.2 Frontend MVP
+- [ ] 🔴 Buat dashboard lokal untuk start scan, lihat progress, findings, dan report artifacts
+- [ ] 🟡 Visualisasi asset tree, vulnerability timeline, dan severity breakdown
+- [ ] 🟡 Tampilkan distributed worker status dari Redis coordinator
+- [ ] 🟢 Export report langsung dari UI
+
+### 24.3 Security Controls
+- [ ] 🔴 Default bind hanya localhost
+- [ ] 🔴 Require token untuk remote bind
+- [ ] 🟡 Audit log untuk action dari UI
+
+### 🏁 Sprint 24 — Definition of Done
+- Scan CLI tetap jalan seperti biasa
+- Frontend bisa menerima progress scan realtime via WebSocket
+- Remote control dilindungi token dan tidak terbuka by default
+
+---
+
+## Sprint 25 — CVE Intelligence & Rule Generation Pipeline
+
+**Goal:** Membuat integrasi CVE/rules lebih bernilai: bukan sekadar download metadata, tapi menghasilkan kandidat rule yang bisa divalidasi dan dijelaskan.
+
+### 25.1 CVE Applicability Engine
+- [ ] 🔴 Mapping teknologi fingerprint ke CPE alias/version range
+- [ ] 🔴 Explainability: kenapa CVE dianggap applicable atau tidak
+- [ ] 🟡 Prioritasi CISA KEV, EPSS, CVSS, exploit maturity, dan exposure context
+- [ ] 🟡 Tandai CVE metadata-only vs actively probed
+
+### 25.2 Automated Candidate Rules
+- [ ] 🔴 Pipeline GitHub Actions di `temu-rules` untuk membuat candidate rule dari NVD/CISA/Exploit-DB/advisory
+- [ ] 🔴 Candidate rule wajib masuk folder staging dan dibuat PR, bukan auto-merge
+- [ ] 🟡 Validator rule: schema, duplicate id, unsafe payload keyword, regex performance, timeout budget
+- [ ] 🟡 Risk classifier: safe, intrusive, destructive, DoS-prone, unknown
+- [ ] 🟢 Auto-generate remediation dan references dari advisory resmi
+
+### 25.3 Rule Simulation
+- [ ] 🟡 Tambahkan `temu rules validate` untuk validasi lokal
+- [ ] 🟡 Tambahkan `temu rules simulate --target-fixture` untuk test rule terhadap fixture
+- [ ] 🟢 Score confidence rule berdasarkan matcher strength dan false-positive risk
+
+### 🏁 Sprint 25 — Definition of Done
+- CVE baru bisa masuk sebagai candidate rule tanpa edit manual berulang
+- Temu bisa menjelaskan CVE applicability secara transparan
+- Rule berisiko tidak pernah aktif tanpa opt-in user
+
+---
+
+## Sprint 26 — Stateful DAST & Business Logic Heuristics
+
+**Goal:** Naik dari request fuzzing sederhana menjadi pengujian stateful yang lebih dekat ke workflow aplikasi nyata.
+
+### 26.1 Form & Workflow Scanner
+- [ ] 🔴 Deteksi form, input type, method, action, dan CSRF token
+- [ ] 🔴 Jalankan probe read-only untuk validation bypass, verbose error, dan reflected input
+- [ ] 🟡 Track state antar request agar tidak spam endpoint yang sama
+- [ ] 🟡 Support safe replay dari browser-captured requests
+
+### 26.2 Authorization Heuristics
+- [ ] 🟡 Multi-role differential scan untuk IDOR/BOLA signal
+- [ ] 🟡 Numeric/id parameter mutation dengan batas aman
+- [ ] 🟡 Deteksi endpoint admin/debug yang accessible dari role rendah
+
+### 26.3 Data Exposure
+- [ ] 🔴 Deteksi secrets di HTML/JS/source maps
+- [ ] 🟡 Deteksi PII-like response dengan redaction di report
+- [ ] 🟡 Deteksi verbose stack trace dan framework debug pages
+
+### 🏁 Sprint 26 — Definition of Done
+- Temu bisa memberi sinyal business logic issue tanpa mengubah data target
+- Evidence sensitif direduksi/redacted di report
+- Stateful scanner tetap punya guardrail scope dan rate limit
+
+---
+
+## Sprint 27 — OAST / Collaborator Mode
+
+**Goal:** Support deteksi blind vulnerability seperti SSRF, XXE, blind XSS, dan Log4Shell-style callback dengan infrastruktur callback milik user.
+
+### 27.1 Callback Server
+- [ ] 🔴 Tambahkan mode `temu collaborator serve` untuk HTTP callback lokal
+- [ ] 🟡 Tambahkan DNS callback mode jika domain user tersedia
+- [ ] 🟡 Correlation ID per payload dan per target
+- [ ] 🟡 Storage SQLite untuk callback evidence
+
+### 27.2 OAST-Aware Rules
+- [ ] 🔴 Rule schema support callback placeholder seperti `{{callback_url}}`
+- [ ] 🟡 SSRF callback probe opt-in
+- [ ] 🟡 XXE callback probe opt-in
+- [ ] 🟡 Blind XSS canary payload opt-in
+- [ ] 🟡 Log injection callback probe opt-in dan rate-limited
+
+### 🏁 Sprint 27 — Definition of Done
+- Blind findings bisa diverifikasi lewat callback evidence
+- Semua OAST probe disabled by default dan butuh konfirmasi/flag eksplisit
+- Report menampilkan callback timeline dan correlation ID
+
+---
+
+## Sprint 28 — Plugin & Rule SDK
+
+**Goal:** Membuka ekosistem Temu tanpa membuat core scanner menjadi tidak stabil.
+
+### 28.1 Stable Rule Schema
+- [ ] 🔴 Versioning schema rule: `schema_version`
+- [ ] 🔴 Backward compatibility loader untuk rule lama
+- [ ] 🟡 Dokumentasi lengkap rule authoring dengan contoh safe/risky
+- [ ] 🟡 JSON Schema untuk validasi YAML rules
+
+### 28.2 Rust-Native Extension Points
+- [ ] 🟡 Definisikan trait internal untuk detector/fingerprint/verifier
+- [ ] 🟡 Support compile-time feature modules untuk detector eksperimen
+- [ ] 🟢 Pertimbangkan sandbox WASM hanya jika kebutuhan dan model keamanan sudah jelas
+
+### 28.3 Rules Marketplace Workflow
+- [ ] 🟡 Metadata rule: author, license, risk, source, last_verified
+- [ ] 🟡 Compatibility matrix: minimum Temu version dan required capabilities
+- [ ] 🟢 Signing/checksum untuk rules release bundle
+
+### 🏁 Sprint 28 — Definition of Done
+- Contributor bisa menulis rule baru dengan validator dan dokumentasi jelas
+- Rule ecosystem bisa berkembang tanpa harus recompile Temu
+- Risiko supply-chain rule mulai ditangani dengan metadata dan checksum
+
+---
+
+## Sprint 29 — Asset Graph & Attack Path Prioritization
+
+**Goal:** Ubah hasil scan dari list panjang menjadi graph risiko yang membantu assessor menentukan prioritas.
+
+### 29.1 Asset Graph
+- [ ] 🔴 Model graph untuk domain, subdomain, IP, port, service, tech, endpoint, CVE, finding
+- [ ] 🔴 Deduplicate finding lintas URL/service yang punya root cause sama
+- [ ] 🟡 Simpan graph ke JSON artifact dan SQLite cache
+- [ ] 🟡 Visualisasi graph di HTML/frontend
+
+### 29.2 Risk Scoring
+- [ ] 🔴 Hitung score gabungan dari severity, exploitability, exposure, auth requirement, KEV/EPSS
+- [ ] 🟡 Attack path hints: exposed admin panel + weak headers + known CVE + public service
+- [ ] 🟡 Report top 10 remediation actions berbasis impact
+
+### 🏁 Sprint 29 — Definition of Done
+- Report tidak hanya menampilkan jumlah finding, tapi prioritas tindakan
+- Duplicate/noisy findings berkurang
+- Asset relationship bisa ditelusuri dari report
+
+---
+
+## Sprint 30 — Enterprise UX, Scheduling & Baseline Diff
+
+**Goal:** Membuat Temu enak dipakai berulang oleh tim, bukan hanya sekali jalan dari terminal.
+
+### 30.1 Scan Scheduling
+- [ ] 🟡 Job scheduler lokal untuk scan berkala
+- [ ] 🟡 Profile target: scope, rate, auth, rules repo, report destination
+- [ ] 🟢 Integrasi cron-friendly output dan exit code policy
+
+### 30.2 Baseline & Diff
+- [ ] 🔴 Compare report antar waktu: new, fixed, unchanged, severity changed
+- [ ] 🟡 Ignore/suppress finding dengan reason dan expiry
+- [ ] 🟡 Trend chart untuk findings, assets, CVE exposure, dan scan duration
+
+### 30.3 Team Integrations
+- [ ] 🟡 Export SARIF untuk GitHub code scanning/security dashboard
+- [ ] 🟡 Export Markdown/Jira-friendly remediation summary
+- [ ] 🟢 Slack/Discord webhook optional untuk scan summary
+
+### 🏁 Sprint 30 — Definition of Done
+- Temu bisa dipakai sebagai scanner berkala dengan baseline
+- Tim bisa melihat perubahan risiko dari waktu ke waktu
+- Output bisa masuk ke workflow engineering/security existing
+
+---
+
+## Parking Lot — Riset Lanjutan
+
+- [ ] Container/Kubernetes posture scan: exposed dashboard, kubelet, registry, common misconfiguration
+- [ ] Cloud exposure checks: public bucket, metadata endpoint exposure, common cloud headers
+- [ ] SBOM/dependency enrichment dari web fingerprint dan package metadata jika tersedia
+- [ ] TLS deep analysis: certificate chain, weak cipher, mTLS signal, expiry risk
+- [ ] Service-specific checks: Redis, Elasticsearch, MongoDB, PostgreSQL, MQTT, AMQP, RDP, SMB
+- [ ] Mobile/API companion: parse mobile app config/artifact jika user memberi file secara eksplisit
+- [ ] Local rules trust model: checksum, signature, provenance, dan allowlist source rules
+- [ ] AI-assisted triage offline/local-first: clustering finding dan remediation draft tanpa mengirim data target keluar
+
+---
+
 # Ringkasan Sprint
 
 | Sprint | Fase | Focus | Deliverable |
@@ -1217,3 +1495,13 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 | 18 | Optimasi | Performance | 1000 req/s, static binary |
 | 19 | Optimasi | Distributed scanning | Redis-based distributed scan |
 | 20 | Optimasi | Benchmark & release | v1.0.0 release |
+| 21 | Advanced Value | Browser-aware crawling | SPA route/API discovery |
+| 22 | Advanced Value | API discovery | OpenAPI, Swagger, GraphQL targets |
+| 23 | Advanced Value | Authenticated scanning | Session profiles + role-aware scan |
+| 24 | Advanced Value | WebSocket runtime | Realtime frontend foundation |
+| 25 | Advanced Value | CVE intelligence | Candidate rule generation + explainability |
+| 26 | Advanced Value | Stateful DAST | Workflow, authz, data exposure heuristics |
+| 27 | Advanced Value | OAST collaborator | Blind vuln callback verification |
+| 28 | Advanced Value | Plugin & rule SDK | Stable rule schema + extension points |
+| 29 | Advanced Value | Asset graph | Attack path prioritization |
+| 30 | Advanced Value | Team UX | Scheduling, baseline diff, integrations |
