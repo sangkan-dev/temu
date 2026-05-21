@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.0] — 2026-05-21
+
+Feature release for CVE metadata integration in the scan pipeline.
+
+### Added
+
+- Scan runs now execute CVE metadata checks after fingerprinting, using detected versioned technologies, CPE mapping, the local SQLite CVE cache, and NVD fetches on cache miss.
+- CVE cache/NVD matches are merged into scan vulnerabilities as version-related findings.
+
+### Notes
+
+- CVE metadata findings require a detected technology version that can be mapped to a CPE. Targets without exposed versions, such as OWASP Juice Shop in default mode, will not produce NVD findings from metadata alone.
+- CVE-specific YAML probes remain separate active detection rules and still depend on matching technology fingerprints and risk policy.
+
 ## [1.2.1] — 2026-05-20
 
 Patch release for vulnerability detection precision.
