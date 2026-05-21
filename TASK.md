@@ -1195,7 +1195,7 @@ Catatan Sprint 18: profiling lokal selesai dengan `cargo flamegraph`, `heaptrack
 
 ## Fase 5 — Advanced Value Roadmap (Post-v1)
 
-**Goal:** Menaikkan value Temu dari scanner CLI menjadi platform assessment yang lebih adaptif: mampu memahami aplikasi modern, API, realtime workflow, rule ecosystem, dan prioritisasi risiko lintas web + network.
+**Goal:** Menaikkan value Temu dari scanner CLI menjadi platform assessment yang lebih adaptif: mampu memahami aplikasi modern, API, network services, cloud/container exposure, realtime workflow, rule ecosystem, AI-assisted triage, dan prioritisasi risiko lintas web + infrastructure.
 
 Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-limited, dan detection-first. Fitur intrusive/OAST/stateful/risky harus tetap opt-in eksplisit, diberi label risiko, dan tercatat di report.
 
@@ -1458,16 +1458,158 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 
 ---
 
+## Sprint 31 — Deep Network Service Enumeration
+
+**Goal:** Perluas Temu dari web scanner menjadi network-aware scanner yang bisa memahami service non-HTTP secara lebih serius.
+
+### 31.1 Protocol-Aware Probing
+- [ ] 🔴 Perbaiki port scanner agar bisa profile TCP service tanpa hanya mengandalkan default port
+- [ ] 🔴 Tambahkan banner parser untuk SSH, FTP, SMTP, IMAP, POP3, Redis, Memcached, MongoDB, PostgreSQL, MySQL, MSSQL, Elasticsearch, RabbitMQ, MQTT, RDP, SMB
+- [ ] 🟡 Deteksi TLS di service non-443 dan jalankan TLS fingerprint di atasnya
+- [ ] 🟡 Ambil version string secara pasif/aman jika protokol mendukung greeting
+- [ ] 🟢 Tandai service unknown dengan raw banner yang sudah disanitasi
+
+### 31.2 Safe Network Scripts
+- [ ] 🔴 Buat rule type baru untuk network/service checks, terpisah dari HTTP vulnerability rule
+- [ ] 🔴 Support matcher berbasis banner, protocol response, status handshake, TLS metadata, dan auth-required signal
+- [ ] 🟡 Tambahkan time budget dan connection budget per host agar tidak agresif
+- [ ] 🟡 Tambahkan output evidence per service: port, protocol, product, version, confidence
+
+### 🏁 Sprint 31 — Definition of Done
+- Temu bisa mengidentifikasi service non-HTTP dengan confidence dan evidence
+- Network rules punya schema sendiri dan tidak dicampur dengan HTTP path probing
+- Scan tetap safe-by-default, tanpa brute force credential
+
+---
+
+## Sprint 32 — Network Vulnerability & Misconfiguration Rules
+
+**Goal:** Tambahkan deteksi vulnerability/misconfiguration jaringan yang umum, read-only, dan bernilai tinggi.
+
+### 32.1 Exposed Service Checks
+- [ ] 🔴 Redis unauthenticated exposure check
+- [ ] 🔴 Elasticsearch unauthenticated exposure check
+- [ ] 🔴 MongoDB unauthenticated exposure check
+- [ ] 🔴 Memcached exposed check
+- [ ] 🟡 PostgreSQL/MySQL/MSSQL auth-required and version exposure checks
+- [ ] 🟡 MQTT anonymous access signal
+- [ ] 🟡 RabbitMQ management exposure signal
+
+### 32.2 TLS & PKI Deep Checks
+- [ ] 🔴 Certificate expiry, hostname mismatch, self-signed, weak signature algorithm
+- [ ] 🟡 Protocol support matrix: TLS 1.0/1.1/1.2/1.3
+- [ ] 🟡 Weak cipher and insecure renegotiation signal jika library mendukung
+- [ ] 🟢 Report certificate chain summary dan SAN inventory
+
+### 32.3 Mail & Remote Access Checks
+- [ ] 🟡 SMTP open relay safe test dengan no-delivery pattern
+- [ ] 🟡 SMTP STARTTLS and banner leakage checks
+- [ ] 🟡 RDP/NLA exposure signal
+- [ ] 🟡 SMB signing requirement signal
+- [ ] 🟢 FTP anonymous login check hanya jika user mengaktifkan `--allow-risky-rules`
+
+### 🏁 Sprint 32 — Definition of Done
+- Temu punya baseline network misconfiguration checks lintas service populer
+- Semua rule non-HTTP punya risk label dan tidak melakukan brute force
+- Report menggabungkan web findings dan network findings secara konsisten
+
+---
+
+## Sprint 33 — Internal Attack Surface & Exposure Mapping
+
+**Goal:** Membantu assessor memahami peta exposure internal/eksternal tanpa melakukan eksploitasi.
+
+### 33.1 Scope-Aware Network Mapping
+- [ ] 🔴 Support target CIDR besar dengan chunking, resume, dan checkpoint
+- [ ] 🔴 Host liveness strategy: TCP connect, ICMP optional, ARP optional untuk local network
+- [ ] 🟡 Detect service drift antar scan baseline
+- [ ] 🟡 Identify internet-facing vs private/internal addresses
+
+### 33.2 Lateral Movement Signals
+- [ ] 🟡 Deteksi exposed admin panels, remote management ports, database ports, message brokers
+- [ ] 🟡 Tandai risky combinations: public DB + weak TLS, exposed Redis + no auth, RDP public + old banner
+- [ ] 🟡 Build graph relation: host -> service -> product -> CVE -> exposure
+- [ ] 🟢 Rekomendasi segmentation/remediation berbasis service exposure
+
+### 33.3 Rate & Safety
+- [ ] 🔴 Adaptive network scan rate per subnet
+- [ ] 🟡 Backoff saat packet loss/connection refused spike
+- [ ] 🟡 `--passive-network` mode untuk banner-only scan
+
+### 🏁 Sprint 33 — Definition of Done
+- Temu bisa memberi peta attack surface lintas host/service
+- Findings diprioritaskan berdasarkan exposure dan kombinasi risiko
+- Scan CIDR besar bisa dilanjutkan ulang tanpa mulai dari nol
+
+---
+
+## Sprint 34 — Cloud, Container & Kubernetes Exposure Checks
+
+**Goal:** Masukkan surface modern infrastructure yang sering muncul di assessment: cloud metadata, container registry, Kubernetes, dan dashboard operasional.
+
+### 34.1 Cloud Exposure
+- [ ] 🔴 Deteksi cloud metadata endpoint exposure dari SSRF-safe signal dan local-network context
+- [ ] 🟡 Public bucket/static storage exposure checks jika URL diberikan eksplisit oleh user
+- [ ] 🟡 Cloud provider fingerprint dari headers, cert, ASN, dan metadata non-invasive
+- [ ] 🟢 Remediation mapping per provider: AWS, GCP, Azure, Cloudflare, generic S3-compatible
+
+### 34.2 Kubernetes & Container
+- [ ] 🔴 Kubernetes API exposure check
+- [ ] 🟡 Kubelet read-only port exposure check
+- [ ] 🟡 Container registry exposure and catalog availability check
+- [ ] 🟡 Prometheus/Grafana/Jaeger/Zipkin dashboard exposure checks
+- [ ] 🟢 Docker daemon TCP exposure signal
+
+### 34.3 Infrastructure Report
+- [ ] 🟡 Tambahkan section "Infrastructure Exposure" di HTML/PDF
+- [ ] 🟡 Group finding berdasarkan environment: cloud, container, observability, database, remote access
+- [ ] 🟢 Export asset inventory untuk handoff ke hardening team
+
+### 🏁 Sprint 34 — Definition of Done
+- Temu bisa mendeteksi surface cloud/container yang umum secara non-invasive
+- Infrastruktur findings punya remediation yang spesifik dan actionable
+- Checks tetap berjalan hanya pada scope yang user berikan
+
+---
+
+## Sprint 35 — AI Agentic Triage & Scan Planning
+
+**Goal:** Jadikan AI sebagai lapisan asisten lokal untuk mengurangi noise, menyusun prioritas, dan merencanakan scan lanjutan tanpa mengirim data target keluar secara default.
+
+### 35.1 Local-First Finding Triage
+- [ ] 🔴 Cluster finding yang punya root cause sama
+- [ ] 🔴 Buat remediation draft lokal dari template dan metadata rule
+- [ ] 🟡 Ringkas evidence dengan redaction otomatis untuk token, cookie, secret, email, dan PII-like data
+- [ ] 🟡 Jelaskan confidence: verified, inferred, metadata-only, inconclusive
+
+### 35.2 Agent Planner
+- [ ] 🟡 Buat `temu agent plan --input results/*.json` untuk menyarankan next scan actions
+- [ ] 🟡 Planner tidak boleh mengeksekusi risky probe tanpa flag eksplisit
+- [ ] 🟡 Planner bisa menyarankan rule update, auth profile, browser crawl, OAST mode, atau network deep scan
+- [ ] 🟢 Tambahkan dry-run mode yang hanya mencetak rencana
+
+### 35.3 Optional LLM Provider Boundary
+- [ ] 🟡 Default: offline/local heuristic tanpa provider eksternal
+- [ ] 🟡 Jika LLM eksternal ditambahkan nanti, wajib opt-in, redaction, dan tampilkan data yang akan dikirim
+- [ ] 🟢 Support provider interface yang bisa dimatikan total saat build/release
+
+### 🏁 Sprint 35 — Definition of Done
+- Temu bisa mengubah report panjang menjadi triage summary yang lebih actionable
+- Agent tidak menjalankan tindakan berisiko tanpa persetujuan eksplisit
+- Data target tidak keluar dari mesin user secara default
+
+---
+
 ## Parking Lot — Riset Lanjutan
 
-- [ ] Container/Kubernetes posture scan: exposed dashboard, kubelet, registry, common misconfiguration
-- [ ] Cloud exposure checks: public bucket, metadata endpoint exposure, common cloud headers
 - [ ] SBOM/dependency enrichment dari web fingerprint dan package metadata jika tersedia
-- [ ] TLS deep analysis: certificate chain, weak cipher, mTLS signal, expiry risk
-- [ ] Service-specific checks: Redis, Elasticsearch, MongoDB, PostgreSQL, MQTT, AMQP, RDP, SMB
 - [ ] Mobile/API companion: parse mobile app config/artifact jika user memberi file secara eksplisit
+- [ ] Wireless/Bluetooth posture research untuk environment lab yang eksplisit mengizinkan
+- [ ] OT/ICS passive fingerprinting research untuk Modbus, BACnet, dan industrial gateways tanpa active exploit
+- [ ] External attack surface monitoring: ASN, certificate transparency, DNS, exposed services over time
+- [ ] SBOM/CPE enrichment dari package manager, container image manifest, dan HTTP tech fingerprint
 - [ ] Local rules trust model: checksum, signature, provenance, dan allowlist source rules
-- [ ] AI-assisted triage offline/local-first: clustering finding dan remediation draft tanpa mengirim data target keluar
+- [ ] Privacy-preserving AI: local embedding, local model, dan redaction policy untuk triage
 
 ---
 
@@ -1505,3 +1647,8 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 | 28 | Advanced Value | Plugin & rule SDK | Stable rule schema + extension points |
 | 29 | Advanced Value | Asset graph | Attack path prioritization |
 | 30 | Advanced Value | Team UX | Scheduling, baseline diff, integrations |
+| 31 | Advanced Value | Network enumeration | Protocol-aware service fingerprinting |
+| 32 | Advanced Value | Network vuln rules | Service misconfiguration + TLS checks |
+| 33 | Advanced Value | Exposure mapping | Internal attack surface graph |
+| 34 | Advanced Value | Infra posture | Cloud, container, Kubernetes exposure |
+| 35 | Advanced Value | AI agent | Local-first triage and scan planning |
