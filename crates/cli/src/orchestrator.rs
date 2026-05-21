@@ -187,7 +187,7 @@ pub async fn run_scan_with_ports(
 
     let all_techs: Vec<fingerprint::TechStack> = tech_stacks.values().flatten().cloned().collect();
 
-    let detected_vulnerabilities =
+    let mut detected_vulnerabilities =
         match run_vulnerability_scan(&all_assets, &all_techs, config).await {
             Ok(vulnerabilities) => vulnerabilities,
             Err(e) => {
@@ -196,6 +196,21 @@ pub async fn run_scan_with_ports(
                 Vec::new()
             }
         };
+    match cve_client::check_cves(&all_techs, config).await {
+        Ok(cve_vulnerabilities) => {
+            if !cve_vulnerabilities.is_empty() {
+                info!(
+                    "CVE metadata check found {} version-related issues",
+                    cve_vulnerabilities.len()
+                );
+            }
+            detected_vulnerabilities.extend(cve_vulnerabilities);
+        }
+        Err(e) => {
+            error_summary.push("cve", &e);
+            tracing::warn!("CVE check error (continuing): {e}");
+        }
+    }
     let vulnerabilities = run_verification(&detected_vulnerabilities, config).await;
     let vulns_found = vulnerabilities.len() as u32;
     eprintln!(
