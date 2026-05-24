@@ -294,6 +294,12 @@ pub enum RulesCommand {
         #[arg(long)]
         allow_risky_rules: bool,
     },
+    /// Generate deterministic SHA-256 checksums for a local rule bundle
+    Checksum {
+        /// Directory containing YAML vulnerability rules.
+        #[arg(long, default_value = "./rules")]
+        rules_dir: std::path::PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -770,6 +776,18 @@ mod tests {
                 assert!(allow_risky_rules);
             }
             _ => panic!("expected Rules::Simulate"),
+        }
+    }
+
+    #[test]
+    fn test_rules_checksum_parse() {
+        let cli = Cli::try_parse_from(["temu", "rules", "checksum", "--rules-dir", "/tmp/rules"])
+            .expect("rules checksum must parse");
+        match cli.command {
+            Command::Rules {
+                mode: RulesCommand::Checksum { rules_dir },
+            } => assert_eq!(rules_dir, std::path::PathBuf::from("/tmp/rules")),
+            _ => panic!("expected Rules::Checksum"),
         }
     }
 

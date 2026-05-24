@@ -1,8 +1,10 @@
 // Fingerprint crate — technology detection (Wappalyzer-style YAML rules)
 
 pub mod rules;
+pub mod sdk;
 pub mod types;
 
+pub use sdk::FingerprintModule;
 pub use types::{FingerprintRule, TechCategory, TechStack};
 
 use std::time::Duration;

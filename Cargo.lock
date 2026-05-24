@@ -3051,6 +3051,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_yaml",
+ "sha2",
  "tempfile",
  "temu_core",
  "tokio",

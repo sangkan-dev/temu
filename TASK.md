@@ -1431,25 +1431,35 @@ JSON/HTML/PDF report.
 **Goal:** Membuka ekosistem Temu tanpa membuat core scanner menjadi tidak stabil.
 
 ### 28.1 Stable Rule Schema
-- [ ] 🔴 Versioning schema rule: `schema_version`
-- [ ] 🔴 Backward compatibility loader untuk rule lama
-- [ ] 🟡 Dokumentasi lengkap rule authoring dengan contoh safe/risky
-- [ ] 🟡 JSON Schema untuk validasi YAML rules
+- [x] 🔴 Versioning schema rule: `schema_version`
+- [x] 🔴 Backward compatibility loader untuk rule lama
+- [x] 🟡 Dokumentasi lengkap rule authoring dengan contoh safe/risky
+- [x] 🟡 JSON Schema untuk validasi YAML rules
 
 ### 28.2 Rust-Native Extension Points
-- [ ] 🟡 Definisikan trait internal untuk detector/fingerprint/verifier
-- [ ] 🟡 Support compile-time feature modules untuk detector eksperimen
-- [ ] 🟢 Pertimbangkan sandbox WASM hanya jika kebutuhan dan model keamanan sudah jelas
+- [x] 🟡 Definisikan trait internal untuk detector/fingerprint/verifier
+- [x] 🟡 Support compile-time feature modules untuk detector eksperimen
+- [x] 🟢 Pertimbangkan sandbox WASM hanya jika kebutuhan dan model keamanan sudah jelas
 
 ### 28.3 Rules Marketplace Workflow
-- [ ] 🟡 Metadata rule: author, license, risk, source, last_verified
-- [ ] 🟡 Compatibility matrix: minimum Temu version dan required capabilities
-- [ ] 🟢 Signing/checksum untuk rules release bundle
+- [x] 🟡 Metadata rule: author, license, risk, source, last_verified
+- [x] 🟡 Compatibility matrix: minimum Temu version dan required capabilities
+- [x] 🟢 Signing/checksum untuk rules release bundle
 
 ### 🏁 Sprint 28 — Definition of Done
 - Contributor bisa menulis rule baru dengan validator dan dokumentasi jelas
 - Rule ecosystem bisa berkembang tanpa harus recompile Temu
 - Risiko supply-chain rule mulai ditangani dengan metadata dan checksum
+
+**Implementasi:** Rule schema v1 sekarang punya `schema_version`, metadata marketplace,
+compatibility requirements, dan loader tetap menganggap rule lama tanpa `schema_version` sebagai
+legacy v1. `temu rules validate` menolak schema unsupported, minimum version yang belum kompatibel,
+capability tidak dikenal, payload risky tanpa konfirmasi, dan tetap memberi confidence score.
+Dokumentasi authoring tersedia di `docs/rule-authoring.md`, JSON Schema di
+`docs/rule-schema.json`, dan `temu rules checksum` menghasilkan manifest SHA-256 deterministik
+untuk bundle rules. Rust-native extension point disediakan sebagai trait detector/fingerprint/
+verifier compile-time; WASM/dynamic runtime plugin sengaja belum diaktifkan sampai model sandbox
+dan trust boundary jelas.
 
 ---
 

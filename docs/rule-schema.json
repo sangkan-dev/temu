@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sangkan.dev/temu/rule-schema-v1.json",
+  "title": "Temu Vulnerability Rule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "severity", "cvss", "payload", "request_method", "verify"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1"], "default": "1" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "author": { "type": ["string", "null"] },
+        "license": { "type": ["string", "null"] },
+        "source": { "type": ["string", "null"] },
+        "last_verified": { "type": ["string", "null"] }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum_temu_version": { "type": ["string", "null"] },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "http",
+              "headers",
+              "body",
+              "query_param",
+              "cookie",
+              "multi_step",
+              "time_based",
+              "oast",
+              "browser_crawl",
+              "api_discovery",
+              "stateful_dast"
+            ]
+          }
+        }
+      }
+    },
+    "tech_stack": { "type": "array", "items": { "type": "string" } },
+    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+    "cvss": { "type": "number", "minimum": 0, "maximum": 10 },
+    "payload": { "type": "string" },
+    "risk_level": { "type": "string", "enum": ["safe", "intrusive", "destructive", "dos", "unknown"] },
+    "requires_confirmation": { "type": "boolean" },
+    "injection_points": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["QueryParam", "Header", "Cookie", "Body"] }
+    },
+    "injection_name": { "type": ["string", "null"] },
+    "baseline_payload": { "type": ["string", "null"] },
+    "request_method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"] },
+    "request_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+    "request_body": { "type": ["string", "null"] },
+    "verify": { "$ref": "#/$defs/verify" },
+    "detection_steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/detection_step" }
+    },
+    "cve_id": { "type": ["string", "null"] },
+    "remediation": { "type": ["string", "null"] },
+    "references": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "verify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match_type"],
+      "properties": {
+        "match_type": { "type": "string", "enum": ["BodyContains", "BodyRegex", "TimeBased", "StatusCode", "HeaderContains"] },
+        "response_codes": { "type": "array", "items": { "type": "integer", "minimum": 100, "maximum": 599 } },
+        "body_regex": { "type": ["string", "null"] },
+        "time_threshold_secs": { "type": ["integer", "null"], "minimum": 1, "maximum": 10 },
+        "body_contains": { "type": ["string", "null"] },
+        "header_name": { "type": ["string", "null"] },
+        "header_contains": { "type": ["string", "null"] }
+      }
+    },
+    "detection_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verify"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "payload": { "type": "string" },
+        "request_method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"] },
+        "request_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "request_body": { "type": ["string", "null"] },
+        "verify": { "$ref": "#/$defs/verify" }
+      }
+    }
+  }
+}

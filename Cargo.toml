@@ -37,3 +37,4 @@ tera = "1"
 printpdf = "0.7"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
+sha2 = "0.10"

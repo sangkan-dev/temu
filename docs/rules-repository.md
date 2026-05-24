@@ -99,6 +99,7 @@ temu rules update
 temu rules update --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
 TEMU_RULES_REPO_URL=https://raw.githubusercontent.com/example/custom-temu-rules/main temu rules update
 temu rules validate --rules-dir ./rules
+temu rules checksum --rules-dir ./rules
 temu rules simulate --rules-dir ./rules --target-fixture http://127.0.0.1:3000/
 ```
 
@@ -108,5 +109,13 @@ Risk policy:
 - `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, or `requires_confirmation: true` rules require `temu scan ... --allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
 - NVD data should be used freely for metadata and candidate generation, but active probes must still carry a risk label because NVD does not distinguish read-only checks from crash, write, or RCE validation paths.
 - CVE metadata findings state their CPE applicability reason and remain unverified until an active reviewed rule confirms the exposure.
+
+Marketplace policy:
+
+- New executable rules should use `schema_version: "1"`.
+- Legacy rules without `schema_version` are accepted as schema v1, but external repositories should migrate them before publication.
+- Rule metadata should include `author`, `license`, `source`, and `last_verified`.
+- Compatibility should declare `minimum_temu_version` and any `required_capabilities`.
+- Release PRs should attach the output of `temu rules checksum` so reviewers can compare deterministic SHA-256 bundle drift.
 
 The engine repository should keep `.github/workflows/release.yml` and other engine checks only.

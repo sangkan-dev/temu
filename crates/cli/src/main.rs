@@ -363,6 +363,11 @@ async fn main() -> anyhow::Result<()> {
                     findings.len()
                 );
             }
+            RulesCommand::Checksum { rules_dir } => {
+                let checksum = vulnerability::checksum_rules_dir(&rules_dir)
+                    .with_context(|| format!("Failed to checksum rules in {rules_dir:?}"))?;
+                println!("{}", serde_json::to_string_pretty(&checksum)?);
+            }
         },
 
         Command::Collaborator { mode } => match mode {

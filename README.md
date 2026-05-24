@@ -157,6 +157,7 @@ Validate active rules or exercise them against an authorized fixture:
 
 ```bash
 cargo run -p cli -- rules validate --rules-dir ./rules
+cargo run -p cli -- rules checksum --rules-dir ./rules
 cargo run -p cli -- rules simulate --rules-dir ./rules \
   --target-fixture http://127.0.0.1:3000/
 ```
@@ -166,6 +167,10 @@ IDs, invalid regexes, excessive timing thresholds, and destructive payloads with
 explicit risk/confirmation declarations. `rules simulate` executes only validated
 rules; risky or time-based probes remain disabled unless `--allow-risky-rules` is
 provided.
+
+Rule authors should use schema v1 with marketplace metadata and compatibility
+requirements. See [docs/rule-authoring.md](docs/rule-authoring.md) and
+[docs/rule-schema.json](docs/rule-schema.json).
 
 Run an OAST collaborator and scan with callback-aware rules:
 

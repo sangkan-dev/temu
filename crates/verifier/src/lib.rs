@@ -1,5 +1,7 @@
 //! Verifier crate — false positive reduction.
 
+pub mod sdk;
+
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -10,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use temu_core::{AppConfig, TemuError, Vulnerability};
 use tracing::{info, warn};
 use vulnerability::{MatchType, Rule, load_rules};
+
+pub use sdk::VerifierModule;
 
 const VERIFY_PARAM_NAME: &str = "temu_verify";
 const MAX_VERIFY_BODY_BYTES: usize = 1024 * 1024;
