@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use regex::Regex;
 use reqwest::{Client, Url};
+use serde_json::Value;
 use temu_core::{AppConfig, Asset, AssetType, TemuError};
 use tokio::process::Command;
 use tokio::time::timeout;
@@ -25,11 +26,18 @@ static SOURCE_MAP_RE: LazyLock<Result<Regex, regex::Error>> =
 static DYNAMIC_ROUTE_RE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r#"(?s)["'`]((?:/|#/)[A-Za-z0-9_./{}:$*?+\-]+)["'`]"#));
 
+#[derive(Debug, Clone)]
+struct BrowserDocument {
+    body: String,
+    network_urls: Vec<String>,
+}
+
 /// Crawls an application like a lightweight browser by fetching HTML, linked
 /// same-origin JavaScript bundles, and SPA route strings.
 ///
-/// This is intentionally non-rendering and scope-aware: it does not execute
-/// JavaScript, submit forms, or leave the origin of `base_url`.
+/// When `browser_crawl_render_js` is enabled, a local Chromium/Chrome binary is
+/// used to render the page and collect browser network requests. The crawler
+/// still enforces same-origin scope before recording assets.
 pub async fn run_browser_crawl(
     base_url: &str,
     config: &AppConfig,
@@ -65,11 +73,27 @@ pub async fn run_browser_crawl(
             continue;
         }
 
-        let Some(page_body) = fetch_page_document(&client, page_url.clone(), config).await else {
+        let Some(document) = fetch_page_document(&client, page_url.clone(), config).await else {
             continue;
         };
 
-        let page_candidates = extract_candidates(&page_body);
+        for network_url in &document.network_urls {
+            if let Ok(url) = Url::parse(network_url)
+                && is_same_origin(&base, &url)
+            {
+                record_url(
+                    &mut assets,
+                    &mut discovered,
+                    url.clone(),
+                    "discovery::browser_network",
+                );
+                if depth < max_depth && should_crawl_as_page(&url) {
+                    queue.push_back((url, depth + 1));
+                }
+            }
+        }
+
+        let page_candidates = extract_candidates(&document.body);
         for candidate in page_candidates {
             if let Some(url) = normalize_candidate(&page_url, &candidate)
                 && is_same_origin(&base, &url)
@@ -86,7 +110,7 @@ pub async fn run_browser_crawl(
             }
         }
 
-        for script_url in extract_script_urls(&page_url, &page_body, &base) {
+        for script_url in extract_script_urls(&page_url, &document.body, &base) {
             let script_key = canonical_without_fragment(&script_url);
             if !visited_scripts.insert(script_key) {
                 continue;
@@ -145,26 +169,40 @@ async fn fetch_text(client: &Client, url: Url, max_bytes: usize) -> Option<Strin
     Some(String::from_utf8_lossy(limited).into_owned())
 }
 
-async fn fetch_page_document(client: &Client, url: Url, config: &AppConfig) -> Option<String> {
+async fn fetch_page_document(
+    client: &Client,
+    url: Url,
+    config: &AppConfig,
+) -> Option<BrowserDocument> {
     if config.browser_crawl_render_js {
         match render_dom_with_browser(url.clone(), config).await {
-            Some(rendered) => return Some(rendered),
+            Some(document) => return Some(document),
             None => {
                 warn!("Browser render unavailable for {url}; falling back to static fetch");
             }
         }
     }
 
-    fetch_text(client, url, MAX_BODY_BYTES).await
+    fetch_text(client, url, MAX_BODY_BYTES)
+        .await
+        .map(|body| BrowserDocument {
+            body,
+            network_urls: Vec::new(),
+        })
 }
 
-async fn render_dom_with_browser(url: Url, config: &AppConfig) -> Option<String> {
+async fn render_dom_with_browser(url: Url, config: &AppConfig) -> Option<BrowserDocument> {
     let browser = resolve_browser_binary(config)?;
     let profile_dir = config.output_dir.join(".cache").join("browser-profile");
     if let Err(e) = std::fs::create_dir_all(&profile_dir) {
         warn!("Failed to create browser profile directory {profile_dir:?}: {e}");
         return None;
     }
+    let netlog_path = profile_dir.join(format!(
+        "netlog-{}-{}.json",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
 
     let mut command = Command::new(browser);
     command
@@ -177,6 +215,8 @@ async fn render_dom_with_browser(url: Url, config: &AppConfig) -> Option<String>
         .arg("--disable-extensions")
         .arg("--disable-sync")
         .arg("--disable-translate")
+        .arg(format!("--log-net-log={}", netlog_path.display()))
+        .arg("--net-log-capture-mode=Default")
         .arg(format!("--user-agent={}", config.user_agent))
         .arg(format!("--user-data-dir={}", profile_dir.display()))
         .arg("--dump-dom")
@@ -206,7 +246,48 @@ async fn render_dom_with_browser(url: Url, config: &AppConfig) -> Option<String>
     }
 
     let limited = &output.stdout[..output.stdout.len().min(MAX_BODY_BYTES)];
-    Some(String::from_utf8_lossy(limited).into_owned())
+    let network_urls = parse_netlog_urls(&netlog_path);
+    let _ = std::fs::remove_file(&netlog_path);
+    Some(BrowserDocument {
+        body: String::from_utf8_lossy(limited).into_owned(),
+        network_urls,
+    })
+}
+
+fn parse_netlog_urls(path: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return Vec::new();
+    };
+
+    let mut urls = HashSet::new();
+    collect_urls_from_json(&value, &mut urls);
+    let mut urls: Vec<String> = urls.into_iter().collect();
+    urls.sort();
+    urls
+}
+
+fn collect_urls_from_json(value: &Value, urls: &mut HashSet<String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::String(url)) = map.get("url")
+                && (url.starts_with("http://") || url.starts_with("https://"))
+            {
+                urls.insert(url.clone());
+            }
+            for nested in map.values() {
+                collect_urls_from_json(nested, urls);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_urls_from_json(item, urls);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn resolve_browser_binary(config: &AppConfig) -> Option<PathBuf> {
@@ -425,6 +506,24 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate == "main.js.map")
         );
+    }
+
+    #[test]
+    fn test_collect_urls_from_netlog_json() {
+        let value: Value = serde_json::json!({
+            "events": [
+                {"params": {"url": "http://127.0.0.1:3000/api/products"}},
+                {"params": {"nested": {"url": "https://example.com/assets/app.js"}}},
+                {"params": {"url": "data:image/png;base64,abc"}}
+            ]
+        });
+        let mut urls = HashSet::new();
+
+        collect_urls_from_json(&value, &mut urls);
+
+        assert!(urls.contains("http://127.0.0.1:3000/api/products"));
+        assert!(urls.contains("https://example.com/assets/app.js"));
+        assert!(!urls.contains("data:image/png;base64,abc"));
     }
 
     #[tokio::test]

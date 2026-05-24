@@ -1207,11 +1207,11 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 
 ### 21.1 Headless Browser Engine
 - [x] 🔴 Evaluasi Rust-native CDP/WebDriver client untuk Chromium/Chrome
-  - Implementasi awal memakai static browser-aware crawler dan optional local Chromium/Chrome render via `--browser-render-js`; CDP/network event capture disiapkan sebagai tahap lanjutan setelah fondasi crawler stabil.
+  - Implementasi memakai static browser-aware crawler, optional local Chromium/Chrome render via `--browser-render-js`, dan browser network log capture untuk endpoint runtime.
 - [x] 🔴 Jalankan render halaman target dengan scope enforcement
 - [x] 🔴 Ambil DOM route, anchor, form, script, stylesheet, dan asset URL
 - [x] 🟡 Tangkap network request dari browser untuk endpoint API yang tidak muncul di HTML awal
-  - Tahap saat ini menangkap endpoint/API dari HTML dan JavaScript bundle; CDP network log penuh belum diaktifkan default karena butuh browser runtime lebih berat.
+  - Saat `--browser-render-js` aktif, Temu membaca Chromium network log dan memasukkan request same-origin sebagai asset `discovery::browser_network`.
 - [x] 🟡 Support timeout, max depth, max pages, dan max same-route repeat
 
 ### 21.2 SPA Route & Source Analysis
