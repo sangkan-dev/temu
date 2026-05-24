@@ -1,7 +1,7 @@
 rate_limit = 50
 timeout_secs = 10
 concurrency = 100
-user_agent = "Temu/1.3.0"
+user_agent = "Temu/1.4.0"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"

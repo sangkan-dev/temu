@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.0] — 2026-05-24
+
+Feature release for advanced discovery, rule extensibility, and repeatable audit workflows.
+
+### Added
+
+- Browser-aware SPA discovery with optional browser network capture, API surface discovery, authenticated session profiles, and a realtime WebSocket dashboard foundation.
+- CVE intelligence rule candidate pipeline, read-only stateful DAST heuristics, OAST collaborator mode, and rule SDK/bundle metadata validation.
+- Asset graph prioritization, scheduled target profiles, baseline diff with suppressions, scan trend history, SARIF output, Markdown remediation summaries, and optional webhook notifications.
+- Opt-in `--include-sensitive-evidence` local audit JSON output for exact PoC validation while regular reports remain suitable for sharing.
+
+### Changed
+
+- Shareable JSON, HTML, and PDF reports retain sensitive evidence locators while redacting only secret/PII values, for example `Password="<REDACTED>"`.
+- Stateful DAST stays within origin scope, reduces JavaScript numeric false positives, and distinguishes framework placeholders from hardcoded credential evidence.
+
+### Notes
+
+- Audit JSON artifacts may contain raw secrets or PII; Temu writes them with owner-only permissions on Unix and operators must keep them local.
+- Version-based NVD findings still require an observed software version that can be mapped to a CPE.
+
 ## [1.3.0] — 2026-05-21
 
 Feature release for CVE metadata integration in the scan pipeline.

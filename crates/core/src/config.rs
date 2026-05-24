@@ -87,7 +87,7 @@ impl Default for AppConfig {
             rate_limit: 50,
             timeout_secs: 10,
             concurrency: 100,
-            user_agent: "Temu/1.3.0".to_string(),
+            user_agent: "Temu/1.4.0".to_string(),
             output_dir: PathBuf::from("./results"),
             rules_dir: PathBuf::from("./rules"),
             dictionaries_dir: PathBuf::from("./dictionaries"),
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(config.rate_limit, 50);
         assert_eq!(config.timeout_secs, 10);
         assert_eq!(config.concurrency, 100);
-        assert_eq!(config.user_agent, "Temu/1.3.0");
+        assert_eq!(config.user_agent, "Temu/1.4.0");
         assert_eq!(config.output_dir, PathBuf::from("./results"));
         assert_eq!(config.rules_dir, PathBuf::from("./rules"));
         assert_eq!(config.dictionaries_dir, PathBuf::from("./dictionaries"));

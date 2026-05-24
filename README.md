@@ -24,7 +24,7 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 Download a release binary:
 
 ```bash
-curl -L https://github.com/sangkan-dev/temu/releases/download/v1.3.0/temu-linux-x86_64-static \
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.4.0/temu-linux-x86_64-static \
   -o temu-linux-x86_64-static
 chmod +x temu-linux-x86_64-static
 ./temu-linux-x86_64-static --help
@@ -33,7 +33,7 @@ chmod +x temu-linux-x86_64-static
 Verify the checksum:
 
 ```bash
-curl -L https://github.com/sangkan-dev/temu/releases/download/v1.3.0/SHA256SUMS \
+curl -L https://github.com/sangkan-dev/temu/releases/download/v1.4.0/SHA256SUMS \
   -o SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
@@ -268,7 +268,7 @@ Default configuration lives in `config/default.toml`:
 rate_limit = 50
 timeout_secs = 10
 concurrency = 100
-user_agent = "Temu/1.3.0"
+user_agent = "Temu/1.4.0"
 output_dir = "./results"
 rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
