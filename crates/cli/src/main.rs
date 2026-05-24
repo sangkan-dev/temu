@@ -5,20 +5,22 @@ use cli::collaborator::{self, CollaboratorServerConfig};
 use cli::distributed;
 use cli::orchestrator;
 use cli::realtime::{RealtimeServerConfig, run_realtime_server};
+use cli::scheduler::{TargetProfile, load_target_profile, validate_scope, violates_exit_policy};
 
 use std::path::PathBuf;
 
 use anyhow::Context;
 use args::{
     Cli, CollaboratorCommand, Command, DiscoveryModeArg, ReportFormat, RulesCommand, ScanCommand,
-    WordlistSize,
+    ScheduleCommand, WordlistSize,
 };
 use clap::Parser;
 use cli::rules_update;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
 use reporter::{
-    ScanResult, generate_graph_cache, generate_graph_json, generate_html, generate_json,
-    generate_pdf,
+    ScanResult, compare_reports, generate_diff_json, generate_graph_cache, generate_graph_json,
+    generate_html, generate_json, generate_markdown, generate_pdf, generate_sarif,
+    generate_trend_json, load_suppressions, record_scan_history,
 };
 use temu_core::init_logging;
 
@@ -113,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
                     oast_wait_secs,
                 );
                 let output_dir = output.unwrap_or_else(|| config.output_dir.clone());
+                config.output_dir = output_dir.clone();
 
                 // Wordlist override: explicit path wins, otherwise resolve from size preset
                 config.wordlist_override = if let Some(custom) = wordlist {
@@ -287,8 +290,45 @@ async fn main() -> anyhow::Result<()> {
                             .with_context(|| "Failed to write HTML report")?,
                         ReportFormat::Pdf => generate_pdf(&result, &dir)
                             .with_context(|| "Failed to write PDF report")?,
+                        ReportFormat::Sarif => generate_sarif(&result, &dir)
+                            .with_context(|| "Failed to write SARIF report")?,
+                        ReportFormat::Markdown => generate_markdown(&result, &dir)
+                            .with_context(|| "Failed to write Markdown summary")?,
                     };
                     println!("{}", path.display());
+                }
+                ReportCommand::Diff {
+                    baseline,
+                    current,
+                    suppressions,
+                    output,
+                } => {
+                    let baseline = read_scan_result(&baseline)?;
+                    let current_result = read_scan_result(&current)?;
+                    let suppressions = match suppressions {
+                        Some(path) => load_suppressions(&path).with_context(|| {
+                            format!("Failed to load suppressions from {path:?}")
+                        })?,
+                        None => Vec::new(),
+                    };
+                    let diff = compare_reports(&baseline, &current_result, &suppressions);
+                    let output_dir = output.unwrap_or_else(|| {
+                        current
+                            .parent()
+                            .unwrap_or(&PathBuf::from("."))
+                            .to_path_buf()
+                    });
+                    let path = generate_diff_json(&diff, &output_dir)
+                        .with_context(|| "Failed to write baseline diff report")?;
+                    println!("{}", path.display());
+                    eprintln!(
+                        "[+] Diff: {} new, {} fixed, {} unchanged, {} severity changed, {} suppressed",
+                        diff.new_count,
+                        diff.fixed_count,
+                        diff.unchanged_count,
+                        diff.severity_changed_count,
+                        diff.suppressed.len()
+                    );
                 }
             }
         }
@@ -401,6 +441,33 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
+        Command::Schedule { mode } => match mode {
+            ScheduleCommand::Run {
+                profile,
+                once,
+                interval_secs,
+            } => {
+                let mut profile = load_target_profile(&profile)
+                    .with_context(|| "Failed to load target profile")?;
+                if let Some(interval_secs) = interval_secs {
+                    profile.interval_secs = interval_secs;
+                }
+                validate_scope(&profile)
+                    .with_context(|| "Target profile scope validation failed")?;
+                loop {
+                    run_scheduled_profile(&profile).await?;
+                    if once {
+                        break;
+                    }
+                    eprintln!(
+                        "[*] Scheduled profile '{}' sleeping {} seconds",
+                        profile.name, profile.interval_secs
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(profile.interval_secs)).await;
+                }
+            }
+        },
+
         Command::Serve { bind, token } => {
             let default_config_path = std::path::PathBuf::from("config/default.toml");
             let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
@@ -482,6 +549,8 @@ fn write_report_set(
     result: &ScanResult,
     output_dir: &std::path::Path,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    let _history_path = record_scan_history(result, output_dir)
+        .with_context(|| "Failed to update scan history cache")?;
     let json_path =
         generate_json(result, output_dir).with_context(|| "Failed to write JSON report")?;
     let html_path =
@@ -490,15 +559,97 @@ fn write_report_set(
         generate_pdf(result, output_dir).with_context(|| "Failed to write PDF report")?;
     let graph_path = generate_graph_json(result, output_dir)
         .with_context(|| "Failed to write asset graph JSON")?;
+    let trend_path = generate_trend_json(result, output_dir)
+        .with_context(|| "Failed to write scan trend JSON")?;
+    let sarif_path =
+        generate_sarif(result, output_dir).with_context(|| "Failed to write SARIF report")?;
+    let markdown_path = generate_markdown(result, output_dir)
+        .with_context(|| "Failed to write Markdown summary")?;
     let _cache_path = generate_graph_cache(result, output_dir)
         .with_context(|| "Failed to write asset graph cache")?;
-    Ok(vec![json_path, html_path, pdf_path, graph_path])
+    Ok(vec![
+        json_path,
+        html_path,
+        pdf_path,
+        graph_path,
+        trend_path,
+        sarif_path,
+        markdown_path,
+    ])
 }
 
 fn print_report_paths(paths: &[std::path::PathBuf]) {
     for path in paths {
         println!("{}", path.display());
     }
+}
+
+fn read_scan_result(path: &std::path::Path) -> anyhow::Result<ScanResult> {
+    let content = std::fs::read_to_string(path).with_context(|| format!("Cannot read {path:?}"))?;
+    serde_json::from_str(&content).with_context(|| format!("Cannot parse scan report {path:?}"))
+}
+
+async fn run_scheduled_profile(profile: &TargetProfile) -> anyhow::Result<()> {
+    let default_config_path = PathBuf::from("config/default.toml");
+    let mut config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+    if let Some(rate_limit) = profile.rate_limit {
+        config.rate_limit = rate_limit;
+    }
+    if let Some(timeout_secs) = profile.timeout_secs {
+        config.timeout_secs = timeout_secs;
+    }
+    config.allow_risky_rules = profile.allow_risky_rules;
+    let output_dir = profile
+        .output_dir
+        .clone()
+        .unwrap_or_else(|| config.output_dir.clone());
+    config.output_dir = output_dir.clone();
+    if let Some(session_profile) = &profile.session_profile {
+        config = config
+            .with_session_profile(session_profile)
+            .with_context(|| format!("Failed to load session profile from {session_profile:?}"))?;
+    }
+    prepare_session_profile(&mut config).await?;
+    if let Some(repo_url) = &profile.rules_repo_url {
+        rules_update::update_rules_from_repo(repo_url, &config.rules_dir, &config.dictionaries_dir)
+            .await
+            .with_context(|| "Scheduled rules update failed")?;
+    }
+    let ports = match &profile.ports {
+        Some(ports) => parse_ports(ports)
+            .map_err(|error| anyhow::anyhow!("Invalid scheduled profile ports: {error}"))?,
+        None => default_top_ports(),
+    };
+    eprintln!(
+        "[*] Scheduled scan profile '{}': {}",
+        profile.name, profile.url
+    );
+    let result =
+        orchestrator::run_scan_with_ports(&profile.url, &config, DiscoveryMode::Hybrid, &ports)
+            .await?;
+    print_report_paths(&write_report_set(&result, &output_dir)?);
+    if let Some(webhook_url) = &profile.webhook_url {
+        post_scan_webhook(webhook_url, &result).await?;
+    }
+    if let Some(threshold) = &profile.fail_on_severity
+        && violates_exit_policy(&result.vulnerabilities, threshold)
+    {
+        anyhow::bail!("Scan findings met configured failure threshold {threshold}");
+    }
+    Ok(())
+}
+
+async fn post_scan_webhook(webhook_url: &str, result: &ScanResult) -> anyhow::Result<()> {
+    let response = reqwest::Client::new()
+        .post(webhook_url)
+        .json(&reporter::enterprise::webhook_summary(result))
+        .send()
+        .await
+        .with_context(|| "Failed to send scan webhook")?;
+    if !response.status().is_success() {
+        anyhow::bail!("Scan webhook returned HTTP {}", response.status());
+    }
+    Ok(())
 }
 
 async fn prepare_session_profile(config: &mut temu_core::AppConfig) -> anyhow::Result<()> {

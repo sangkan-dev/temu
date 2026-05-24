@@ -129,6 +129,25 @@ Generate a report from an existing JSON result:
 cargo run -p cli -- report generate --format json --input ./results/2026-05-19_example_com.json
 cargo run -p cli -- report generate --format html --input ./results/2026-05-19_example_com.json
 cargo run -p cli -- report generate --format pdf --input ./results/2026-05-19_example_com.json
+cargo run -p cli -- report generate --format sarif --input ./results/2026-05-19_example_com.json
+cargo run -p cli -- report generate --format markdown --input ./results/2026-05-19_example_com.json
+```
+
+Compare current findings against an earlier baseline:
+
+```bash
+cargo run -p cli -- report diff \
+  --baseline ./results/previous.json \
+  --current ./results/current.json \
+  --suppressions ./config/suppressions.example.toml
+```
+
+Run a cron-friendly target profile once, or omit `--once` for the local scheduler:
+
+```bash
+cargo run -p cli -- schedule run \
+  --profile ./config/target-profile.example.toml \
+  --once
 ```
 
 Update CVE cache:
@@ -220,6 +239,8 @@ Each completed scan writes:
 - HTML: analyst-friendly report with summary, target table, asset graph priorities, findings, OAST callback timeline, assets, and tech stack.
 - PDF: executive report with cover page, risk overview, vulnerability detail, and recommendations.
 - Asset graph JSON: relationship graph with deduplicated findings, attack path hints, and top remediation actions.
+- Trend JSON: historical findings, assets, CVE findings, and duration for repeat scans.
+- SARIF and Markdown: team-facing integration and remediation artifacts.
 
 Multi-target scans write one report set per target and one aggregate report. Aggregate reports include target summaries sorted by vulnerability count.
 
@@ -290,6 +311,7 @@ Temu can keep first-party rules in this repository and consume an external rules
 The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD/CISA/Exploit-DB snapshots, and dictionary sources; NVD records become non-executable candidate descriptors under `staging/candidates/` in the generated PR. Only reviewed rules are added to the active manifest. Rules that are intrusive, destructive, or DoS-prone can still be published, but they must declare `risk_level` or `requires_confirmation` so Temu only executes them after explicit user opt-in.
 
 See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
+See [docs/enterprise-workflows.md](docs/enterprise-workflows.md) for profiles, baseline diff, suppressions, SARIF, Markdown, and webhook usage.
 
 ## Rule Safety
 

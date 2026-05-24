@@ -1,0 +1,5 @@
+[[suppression]]
+finding_id = "SEC-HEADER-CSP"
+url_contains = "127.0.0.1"
+reason = "Accepted locally while application security headers are being tuned."
+expires_at = "2026-06-30T00:00:00Z"

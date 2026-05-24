@@ -5,4 +5,5 @@ pub mod distributed;
 pub mod orchestrator;
 pub mod realtime;
 pub mod rules_update;
+pub mod scheduler;
 pub mod stateful;

@@ -20,7 +20,7 @@ pub fn generate_html(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, 
     })?;
 
     let tera = build_templates()?;
-    let context = Context::from_serialize(ReportView::from_result(result))
+    let context = Context::from_serialize(ReportView::from_result(result, output_dir))
         .map_err(|e| TemuError::Parse(format!("Failed to build HTML context: {e}")))?;
     let html = tera
         .render("report.html", &context)
@@ -76,6 +76,10 @@ fn build_templates() -> Result<Tera, TemuError> {
             include_str!("../../../templates/partials/asset_graph.html"),
         ),
         (
+            "partials/trend.html",
+            include_str!("../../../templates/partials/trend.html"),
+        ),
+        (
             "partials/footer.html",
             include_str!("../../../templates/partials/footer.html"),
         ),
@@ -109,10 +113,11 @@ struct ReportView {
     tech_groups: Vec<TechGroupView>,
     callback_events: Vec<CallbackEventView>,
     graph: GraphSummaryView,
+    trend: Vec<TrendPointView>,
 }
 
 impl ReportView {
-    fn from_result(result: &ScanResult) -> Self {
+    fn from_result(result: &ScanResult, output_dir: &Path) -> Self {
         let vulnerabilities = result
             .vulnerabilities
             .iter()
@@ -120,6 +125,7 @@ impl ReportView {
             .collect::<Vec<_>>();
         let severity_counts = severity_counts(&result.vulnerabilities);
         let graph = crate::graph::build_asset_graph(result);
+        let trend = crate::enterprise::load_trend_points(result, output_dir).unwrap_or_default();
 
         Self {
             target: result.target.clone(),
@@ -151,6 +157,28 @@ impl ReportView {
                 .map(CallbackEventView::from_event)
                 .collect(),
             graph: GraphSummaryView::from_graph(&graph),
+            trend: trend.iter().map(TrendPointView::from_point).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct TrendPointView {
+    scan_started_at: String,
+    vulnerabilities: u32,
+    assets: usize,
+    cve_findings: usize,
+    duration_secs: String,
+}
+
+impl TrendPointView {
+    fn from_point(point: &crate::enterprise::TrendPoint) -> Self {
+        Self {
+            scan_started_at: point.scan_started_at.clone(),
+            vulnerabilities: point.vulnerabilities,
+            assets: point.assets,
+            cve_findings: point.cve_findings,
+            duration_secs: format!("{:.1}", point.duration_secs),
         }
     }
 }

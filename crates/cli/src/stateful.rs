@@ -20,7 +20,7 @@ static ATTR_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
 });
 static SECRET_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(
-        r#"(?is)(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|secret|token|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{8,})"#,
+        r#"(?s)(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?i:(?:api[_-]?key|apikey|secret|token|password))\s*[:=]\s*["'][A-Za-z0-9_./+=-]{8,}["']|(?:API_KEY|APIKEY|SECRET|TOKEN|PASSWORD)\s*=\s*[A-Za-z0-9_./+=-]{8,})"#,
     )
     .ok()
 });
@@ -72,7 +72,7 @@ pub async fn run_stateful_dast(
     config: &AppConfig,
 ) -> anyhow::Result<StatefulScanResult> {
     let base = Url::parse(base_url)?;
-    let client = build_client(config)?;
+    let client = build_client(config, &base)?;
     let mut result = StatefulScanResult::default();
     let mut visited = HashSet::new();
     let mut request_budget = MAX_STATEFUL_REQUESTS.min(config.concurrency.max(1));
@@ -121,11 +121,24 @@ pub async fn run_stateful_dast(
     Ok(result)
 }
 
-fn build_client(config: &AppConfig) -> anyhow::Result<Client> {
+fn build_client(config: &AppConfig, base: &Url) -> anyhow::Result<Client> {
+    let scope_scheme = base.scheme().to_string();
+    let scope_host = base.host_str().unwrap_or_default().to_string();
+    let scope_port = base.port_or_known_default();
     Ok(Client::builder()
         .timeout(Duration::from_secs(config.timeout_secs))
         .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::limited(3))
+        .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+            let url = attempt.url();
+            let in_scope = url.scheme() == scope_scheme
+                && url.host_str() == Some(scope_host.as_str())
+                && url.port_or_known_default() == scope_port;
+            if attempt.previous().len() >= 3 || !in_scope {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        }))
         .user_agent(&config.user_agent)
         .build()?)
 }
@@ -356,7 +369,7 @@ async fn probe_get_form_reflection(
 
 fn inspect_data_exposure(snapshot: &ResponseSnapshot) -> Vec<Vulnerability> {
     let mut findings = Vec::new();
-    if let Some(evidence) = first_redacted_match(SECRET_RE.as_ref(), &snapshot.body) {
+    if let Some(evidence) = first_secret_match(&snapshot.body) {
         findings.push(vulnerability(
             "STATEFUL-SECRET-EXPOSURE",
             "Potential secret exposed in HTML/JavaScript response",
@@ -368,7 +381,7 @@ fn inspect_data_exposure(snapshot: &ResponseSnapshot) -> Vec<Vulnerability> {
         ));
     }
     if let Some(evidence) = first_redacted_match(EMAIL_RE.as_ref(), &snapshot.body)
-        .or_else(|| first_redacted_match(CREDIT_CARD_RE.as_ref(), &snapshot.body))
+        .or_else(|| first_valid_card_match(&snapshot.body))
     {
         findings.push(vulnerability(
             "STATEFUL-PII-LIKE-EXPOSURE",
@@ -399,6 +412,83 @@ fn first_redacted_match(regex: Option<&Regex>, body: &str) -> Option<String> {
     regex
         .find(body)
         .map(|m| redact_evidence(m.as_str()).chars().take(160).collect())
+}
+
+fn first_secret_match(body: &str) -> Option<String> {
+    let regex = SECRET_RE.as_ref()?;
+    regex.find_iter(body).find_map(|candidate| {
+        let normalized = candidate
+            .as_str()
+            .chars()
+            .filter(|character| !character.is_ascii_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let is_placeholder = ["password", "token", "secret", "apikey", "api_key"]
+            .iter()
+            .any(|value| {
+                normalized.ends_with(&format!(":\"{value}\""))
+                    || normalized.ends_with(&format!("=\"{value}\""))
+                    || normalized.ends_with(&format!(":'{value}'"))
+                    || normalized.ends_with(&format!("='{value}'"))
+            });
+        (!is_placeholder).then(|| redact_evidence(candidate.as_str()))
+    })
+}
+
+fn first_valid_card_match(body: &str) -> Option<String> {
+    let regex = CREDIT_CARD_RE.as_ref()?;
+    regex.find_iter(body).find_map(|candidate| {
+        let digits = candidate
+            .as_str()
+            .chars()
+            .filter(char::is_ascii_digit)
+            .collect::<String>();
+        if luhn_valid(&digits) && has_payment_context(body, candidate.start(), candidate.end()) {
+            Some(redact_evidence(candidate.as_str()))
+        } else {
+            None
+        }
+    })
+}
+
+fn has_payment_context(body: &str, start: usize, end: usize) -> bool {
+    let mut left = start.saturating_sub(48);
+    while left < start && !body.is_char_boundary(left) {
+        left += 1;
+    }
+    let mut right = (end + 48).min(body.len());
+    while right > end && !body.is_char_boundary(right) {
+        right -= 1;
+    }
+    body.get(left..right)
+        .map(str::to_ascii_lowercase)
+        .map(|context| {
+            ["card", "credit", "payment", "pan", "cc_number"]
+                .iter()
+                .any(|marker| context.contains(marker))
+        })
+        .unwrap_or(false)
+}
+
+fn luhn_valid(digits: &str) -> bool {
+    if !(13..=19).contains(&digits.len()) {
+        return false;
+    }
+    let mut sum = 0u32;
+    let parity = digits.len() % 2;
+    for (index, digit) in digits.chars().enumerate() {
+        let Some(mut value) = digit.to_digit(10) else {
+            return false;
+        };
+        if index % 2 == parity {
+            value *= 2;
+            if value > 9 {
+                value -= 9;
+            }
+        }
+        sum += value;
+    }
+    sum.is_multiple_of(10)
 }
 
 fn redact_evidence(value: &str) -> String {
@@ -756,6 +846,43 @@ mod tests {
     }
 
     #[test]
+    fn test_card_detection_requires_luhn_valid_candidate() {
+        assert!(first_valid_card_match("render size 666666666668 pixels").is_none());
+        assert!(first_valid_card_match("record=4111 1111 1111 1111").is_none());
+        assert!(first_valid_card_match("card=4111 1111 1111 1111").is_some());
+    }
+
+    #[test]
+    fn test_data_exposure_ignores_framework_token_metadata() {
+        let snapshot = ResponseSnapshot {
+            url: "https://example.com/main.js".to_string(),
+            status: 200,
+            body: "static provider={token:t,factory:t.factory,providedIn:\"root\"}".to_string(),
+            content_length: 64,
+        };
+
+        assert!(inspect_data_exposure(&snapshot).is_empty());
+    }
+
+    #[test]
+    fn test_secret_exposure_skips_placeholder_before_hardcoded_value() {
+        let snapshot = ResponseSnapshot {
+            url: "https://example.com/main.js".to_string(),
+            status: 200,
+            body: r#"password:"password";Password="IamUsedForTesting""#.to_string(),
+            content_length: 49,
+        };
+
+        let finding = inspect_data_exposure(&snapshot)
+            .into_iter()
+            .find(|finding| finding.id == "STATEFUL-SECRET-EXPOSURE")
+            .expect("hardcoded value should be reported");
+
+        assert!(finding.proof.contains("Pass[REDACTED]ing\""));
+        assert!(!finding.proof.contains("ord\""));
+    }
+
+    #[test]
     fn test_mutate_numeric_identifier_query_and_path() {
         let base = Url::parse("https://example.com").unwrap();
         assert_eq!(
@@ -814,5 +941,32 @@ mod tests {
             .expect("secret exposure should be reported");
         assert!(secret.proof.contains("[REDACTED]"));
         assert!(!secret.proof.contains("secret-value-12345"));
+    }
+
+    #[tokio::test]
+    async fn test_stateful_scan_does_not_follow_cross_origin_redirect() {
+        let external = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/outside"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("owner@example.com"))
+            .mount(&external)
+            .await;
+
+        let local = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/outside", external.uri())),
+            )
+            .mount(&local)
+            .await;
+
+        let result = run_stateful_dast(&local.uri(), &[], &test_config())
+            .await
+            .unwrap();
+
+        assert!(result.findings.is_empty());
+        assert!(result.assets.is_empty());
     }
 }

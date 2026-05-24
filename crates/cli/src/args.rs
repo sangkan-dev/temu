@@ -68,6 +68,11 @@ pub enum Command {
         #[command(subcommand)]
         mode: CollaboratorCommand,
     },
+    /// Run repeatable scans from an operator-maintained target profile
+    Schedule {
+        #[command(subcommand)]
+        mode: ScheduleCommand,
+    },
     /// Run the realtime WebSocket dashboard server
     Serve {
         /// Bind address, defaults to localhost only.
@@ -254,6 +259,24 @@ pub enum ReportCommand {
         #[arg(long)]
         input: std::path::PathBuf,
     },
+    /// Compare current report against a previous baseline
+    Diff {
+        /// Previous JSON report.
+        #[arg(long)]
+        baseline: std::path::PathBuf,
+
+        /// Current JSON report.
+        #[arg(long)]
+        current: std::path::PathBuf,
+
+        /// Optional TOML/JSON/YAML list of suppression rules.
+        #[arg(long)]
+        suppressions: Option<std::path::PathBuf>,
+
+        /// Output directory for diff JSON.
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -338,6 +361,24 @@ pub enum CollaboratorCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum ScheduleCommand {
+    /// Execute a target profile once or periodically until interrupted
+    Run {
+        /// TOML/JSON/YAML target profile path.
+        #[arg(long)]
+        profile: std::path::PathBuf,
+
+        /// Execute once and exit, suitable for an external cron scheduler.
+        #[arg(long)]
+        once: bool,
+
+        /// Override the profile interval in seconds for local scheduling.
+        #[arg(long)]
+        interval_secs: Option<u64>,
+    },
+}
+
 #[derive(Debug, Clone, ValueEnum)]
 pub enum DiscoveryModeArg {
     Bruteforce,
@@ -351,6 +392,8 @@ pub enum ReportFormat {
     Json,
     Html,
     Pdf,
+    Sarif,
+    Markdown,
 }
 
 #[derive(Debug, Clone, ValueEnum, Default)]
@@ -712,6 +755,45 @@ mod tests {
     }
 
     #[test]
+    fn test_report_diff_and_export_formats_parse() {
+        let diff = Cli::try_parse_from([
+            "temu",
+            "report",
+            "diff",
+            "--baseline",
+            "/tmp/old.json",
+            "--current",
+            "/tmp/new.json",
+        ])
+        .expect("report diff must parse");
+        assert!(matches!(
+            diff.command,
+            Command::Report {
+                mode: ReportCommand::Diff { .. }
+            }
+        ));
+
+        for format in ["sarif", "markdown"] {
+            let cli = Cli::try_parse_from([
+                "temu",
+                "report",
+                "generate",
+                "--format",
+                format,
+                "--input",
+                "/tmp/result.json",
+            ])
+            .expect("export format must parse");
+            assert!(matches!(
+                cli.command,
+                Command::Report {
+                    mode: ReportCommand::Generate { .. }
+                }
+            ));
+        }
+    }
+
+    #[test]
     fn test_cve_update_parses() {
         let cli = Cli::try_parse_from(["temu", "cve", "update"]).expect("cve update must parse");
         assert!(matches!(
@@ -870,6 +952,34 @@ mod tests {
                 mode: CollaboratorCommand::Evidence { correlation_id, .. },
             } => assert_eq!(correlation_id, "cid-123"),
             _ => panic!("expected Collaborator::Evidence"),
+        }
+    }
+
+    #[test]
+    fn test_schedule_run_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "schedule",
+            "run",
+            "--profile",
+            "/tmp/target.toml",
+            "--once",
+        ])
+        .expect("schedule run must parse");
+        match cli.command {
+            Command::Schedule {
+                mode:
+                    ScheduleCommand::Run {
+                        profile,
+                        once,
+                        interval_secs,
+                    },
+            } => {
+                assert_eq!(profile, std::path::PathBuf::from("/tmp/target.toml"));
+                assert!(once);
+                assert!(interval_secs.is_none());
+            }
+            _ => panic!("expected Schedule::Run"),
         }
     }
 

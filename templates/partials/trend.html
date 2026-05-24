@@ -1,0 +1,27 @@
+{% if trend | length > 0 %}
+<section>
+  <h2>Scan Trend</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Findings</th>
+        <th>Assets</th>
+        <th>CVE Findings</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for point in trend %}
+      <tr>
+        <td>{{ point.scan_started_at }}</td>
+        <td>{{ point.vulnerabilities }}</td>
+        <td>{{ point.assets }}</td>
+        <td>{{ point.cve_findings }}</td>
+        <td>{{ point.duration_secs }}s</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

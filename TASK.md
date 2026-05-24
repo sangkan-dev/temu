@@ -1498,24 +1498,31 @@ deduplicated findings.
 **Goal:** Membuat Temu enak dipakai berulang oleh tim, bukan hanya sekali jalan dari terminal.
 
 ### 30.1 Scan Scheduling
-- [ ] 🟡 Job scheduler lokal untuk scan berkala
-- [ ] 🟡 Profile target: scope, rate, auth, rules repo, report destination
-- [ ] 🟢 Integrasi cron-friendly output dan exit code policy
+- [x] 🟡 Job scheduler lokal untuk scan berkala
+- [x] 🟡 Profile target: scope, rate, auth, rules repo, report destination
+- [x] 🟢 Integrasi cron-friendly output dan exit code policy
 
 ### 30.2 Baseline & Diff
-- [ ] 🔴 Compare report antar waktu: new, fixed, unchanged, severity changed
-- [ ] 🟡 Ignore/suppress finding dengan reason dan expiry
-- [ ] 🟡 Trend chart untuk findings, assets, CVE exposure, dan scan duration
+- [x] 🔴 Compare report antar waktu: new, fixed, unchanged, severity changed
+- [x] 🟡 Ignore/suppress finding dengan reason dan expiry
+- [x] 🟡 Trend chart untuk findings, assets, CVE exposure, dan scan duration
 
 ### 30.3 Team Integrations
-- [ ] 🟡 Export SARIF untuk GitHub code scanning/security dashboard
-- [ ] 🟡 Export Markdown/Jira-friendly remediation summary
-- [ ] 🟢 Slack/Discord webhook optional untuk scan summary
+- [x] 🟡 Export SARIF untuk GitHub code scanning/security dashboard
+- [x] 🟡 Export Markdown/Jira-friendly remediation summary
+- [x] 🟢 Slack/Discord webhook optional untuk scan summary
 
 ### 🏁 Sprint 30 — Definition of Done
 - Temu bisa dipakai sebagai scanner berkala dengan baseline
 - Tim bisa melihat perubahan risiko dari waktu ke waktu
 - Output bisa masuk ke workflow engineering/security existing
+
+**Implementasi:** `temu schedule run --profile` menjalankan target profile TOML/JSON/YAML
+sekali untuk cron atau periodik secara lokal, dengan scope host, rate/timeout, authenticated
+session, rules repo refresh, output directory, webhook, dan failure threshold severity. Modul
+`reporter::enterprise` menyediakan `temu report diff` dengan suppression beralasan dan expiry,
+history SQLite + artifact trend yang tampil di HTML, serta export SARIF dan Markdown. Report set
+normal kini menghasilkan JSON/HTML/PDF, asset graph, trend, SARIF, dan remediation Markdown.
 
 ---
 

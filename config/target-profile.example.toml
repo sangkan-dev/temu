@@ -1,0 +1,15 @@
+name = "local-juice-shop"
+url = "http://127.0.0.1:3000/"
+scope_host = "127.0.0.1"
+interval_secs = 86400
+rate_limit = 25
+timeout_secs = 10
+ports = "3000"
+output_dir = "./results"
+allow_risky_rules = false
+fail_on_severity = "high"
+
+# Optional authenticated and integration settings:
+# session_profile = "./config/session.example.toml"
+# rules_repo_url = "https://raw.githubusercontent.com/sangkan-dev/temu-rules/main"
+# webhook_url = "https://hooks.example.invalid/temu"

@@ -8,6 +8,8 @@ temu_core = { path = "../core" }
 fingerprint = { path = "../fingerprint" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+toml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }

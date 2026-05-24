@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -336,10 +337,10 @@ fn attack_path_hints(
     let has_missing_headers = deduped_findings
         .iter()
         .any(|finding| finding.rule_id.starts_with("SEC-HEADER-"));
-    let has_public_service = result
-        .assets
-        .iter()
-        .any(|asset| matches!(asset.asset_type, AssetType::Service | AssetType::Url));
+    let has_public_service = result.assets.iter().any(|asset| {
+        matches!(asset.asset_type, AssetType::Service | AssetType::Url)
+            && is_public_surface(&asset.url)
+    });
 
     let mut hints = Vec::new();
     if has_admin && has_missing_headers && has_public_service {
@@ -437,7 +438,26 @@ fn risk_score(vulnerability: &Vulnerability) -> f32 {
     } else {
         1.0
     };
-    ((vulnerability.cvss_score.max(severity) * 10.0) * verification * cve * kev * epss).min(100.0)
+    let proof = vulnerability.proof.to_ascii_lowercase();
+    let auth = if proof.contains("auth required") || proof.contains("authenticated") {
+        0.85
+    } else {
+        1.0
+    };
+    let target = vulnerability.url.to_ascii_lowercase();
+    let exposure = if !is_public_surface(&target) {
+        0.9
+    } else {
+        1.1
+    };
+    ((vulnerability.cvss_score.max(severity) * 10.0)
+        * verification
+        * cve
+        * kev
+        * epss
+        * auth
+        * exposure)
+        .min(100.0)
 }
 
 fn root_cause_key(vulnerability: &Vulnerability) -> String {
@@ -459,13 +479,46 @@ fn host_from_url(value: &str) -> Option<String> {
         .split_once("://")
         .map(|(_, rest)| rest)
         .unwrap_or(value);
-    after_scheme
+    let authority = after_scheme
         .split(['/', '?', '#'])
         .next()
-        .and_then(|authority| authority.split('@').next_back())
-        .and_then(|host_port| host_port.split(':').next())
+        .and_then(|authority| authority.split('@').next_back())?;
+    if let Some(ipv6) = authority.strip_prefix('[') {
+        return ipv6
+            .split_once(']')
+            .map(|(host, _)| host.to_string())
+            .filter(|host| !host.is_empty());
+    }
+    authority
+        .split(':')
+        .next()
         .filter(|host| !host.is_empty())
         .map(str::to_string)
+}
+
+fn is_public_surface(value: &str) -> bool {
+    let Some(host) = host_from_url(value) else {
+        return false;
+    };
+    if host.eq_ignore_ascii_case("localhost") {
+        return false;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            !(ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast())
+        }
+        Ok(IpAddr::V6(ip)) => {
+            !(ip.is_loopback()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+                || ip.is_unspecified())
+        }
+        Err(_) => true,
+    }
 }
 
 fn graph_kind_and_label(asset_type: AssetType, value: &str) -> (GraphNodeKind, String) {
@@ -578,5 +631,13 @@ mod tests {
                 .iter()
                 .any(|node| node.kind == GraphNodeKind::Technology)
         );
+    }
+
+    #[test]
+    fn test_private_surfaces_are_not_reported_as_public() {
+        assert!(!is_public_surface("http://127.0.0.1:3000/admin"));
+        assert!(!is_public_surface("http://192.168.10.5/admin"));
+        assert!(!is_public_surface("http://[::1]/admin"));
+        assert!(is_public_surface("https://example.com/admin"));
     }
 }
