@@ -32,9 +32,36 @@ pub struct AppConfig {
     /// explicit confirmation to execute.
     #[serde(default)]
     pub allow_risky_rules: bool,
+    /// Enables browser-aware crawling of HTML and JavaScript routes.
+    #[serde(default = "default_browser_crawl_enabled")]
+    pub browser_crawl_enabled: bool,
+    /// Maximum number of in-scope pages visited by the browser-aware crawler.
+    #[serde(default = "default_browser_crawl_max_pages")]
+    pub browser_crawl_max_pages: usize,
+    /// Maximum crawl depth for links discovered by the browser-aware crawler.
+    #[serde(default = "default_browser_crawl_max_depth")]
+    pub browser_crawl_max_depth: usize,
+    /// Uses a local Chromium/Chrome binary to render JavaScript before route extraction.
+    #[serde(default)]
+    pub browser_crawl_render_js: bool,
+    /// Optional path to a Chromium/Chrome-compatible browser binary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_crawl_browser_path: Option<PathBuf>,
 }
 
 fn default_max_recursion_depth() -> usize {
+    2
+}
+
+fn default_browser_crawl_enabled() -> bool {
+    true
+}
+
+fn default_browser_crawl_max_pages() -> usize {
+    25
+}
+
+fn default_browser_crawl_max_depth() -> usize {
     2
 }
 
@@ -51,6 +78,11 @@ impl Default for AppConfig {
             max_recursion_depth: default_max_recursion_depth(),
             wordlist_override: None,
             allow_risky_rules: false,
+            browser_crawl_enabled: default_browser_crawl_enabled(),
+            browser_crawl_max_pages: default_browser_crawl_max_pages(),
+            browser_crawl_max_depth: default_browser_crawl_max_depth(),
+            browser_crawl_render_js: false,
+            browser_crawl_browser_path: None,
         }
     }
 }
@@ -78,7 +110,10 @@ impl AppConfig {
     /// Each field has a corresponding env var with the `TEMU_` prefix:
     /// `TEMU_RATE_LIMIT`, `TEMU_TIMEOUT_SECS`, `TEMU_CONCURRENCY`,
     /// `TEMU_USER_AGENT`, `TEMU_OUTPUT_DIR`, `TEMU_RULES_DIR`, `TEMU_DICTIONARIES_DIR`,
-    /// `TEMU_MAX_RECURSION_DEPTH`, `TEMU_ALLOW_RISKY_RULES`.
+    /// `TEMU_MAX_RECURSION_DEPTH`, `TEMU_ALLOW_RISKY_RULES`,
+    /// `TEMU_BROWSER_CRAWL_ENABLED`, `TEMU_BROWSER_CRAWL_MAX_PAGES`,
+    /// `TEMU_BROWSER_CRAWL_MAX_DEPTH`, `TEMU_BROWSER_CRAWL_RENDER_JS`,
+    /// `TEMU_BROWSER_CRAWL_BROWSER_PATH`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
@@ -119,6 +154,31 @@ impl AppConfig {
                 "1" | "true" | "yes" | "y" | "on"
             );
         }
+        if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_ENABLED") {
+            self.browser_crawl_enabled = matches!(
+                v.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "y" | "on"
+            );
+        }
+        if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_MAX_PAGES")
+            && let Ok(n) = v.parse()
+        {
+            self.browser_crawl_max_pages = n;
+        }
+        if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_MAX_DEPTH")
+            && let Ok(n) = v.parse()
+        {
+            self.browser_crawl_max_depth = n;
+        }
+        if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_RENDER_JS") {
+            self.browser_crawl_render_js = matches!(
+                v.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "y" | "on"
+            );
+        }
+        if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_BROWSER_PATH") {
+            self.browser_crawl_browser_path = Some(PathBuf::from(v));
+        }
     }
 
     /// Loads configuration from `path` and applies `TEMU_*` env var overrides.
@@ -156,6 +216,11 @@ mod tests {
         assert_eq!(config.dictionaries_dir, PathBuf::from("./dictionaries"));
         assert_eq!(config.max_recursion_depth, 2);
         assert!(!config.allow_risky_rules);
+        assert!(config.browser_crawl_enabled);
+        assert_eq!(config.browser_crawl_max_pages, 25);
+        assert_eq!(config.browser_crawl_max_depth, 2);
+        assert!(!config.browser_crawl_render_js);
+        assert!(config.browser_crawl_browser_path.is_none());
     }
 
     #[test]
@@ -170,6 +235,11 @@ rules_dir = "/tmp/rules"
 dictionaries_dir = "/tmp/dicts"
 max_recursion_depth = 3
 allow_risky_rules = true
+browser_crawl_enabled = false
+browser_crawl_max_pages = 10
+browser_crawl_max_depth = 1
+browser_crawl_render_js = true
+browser_crawl_browser_path = "/usr/bin/chromium"
 "#;
         let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         tmp.write_all(toml_content.as_bytes()).unwrap();
@@ -181,6 +251,14 @@ allow_risky_rules = true
         assert_eq!(config.user_agent, "Temu/0.2.0");
         assert_eq!(config.max_recursion_depth, 3);
         assert!(config.allow_risky_rules);
+        assert!(!config.browser_crawl_enabled);
+        assert_eq!(config.browser_crawl_max_pages, 10);
+        assert_eq!(config.browser_crawl_max_depth, 1);
+        assert!(config.browser_crawl_render_js);
+        assert_eq!(
+            config.browser_crawl_browser_path,
+            Some(PathBuf::from("/usr/bin/chromium"))
+        );
     }
 
     #[test]
@@ -245,5 +323,30 @@ allow_risky_rules = true
         config.apply_env_overrides();
         unsafe { std::env::remove_var("TEMU_MAX_RECURSION_DEPTH") };
         assert_eq!(config.max_recursion_depth, 4);
+    }
+
+    #[test]
+    fn test_apply_env_overrides_browser_crawl() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::set_var("TEMU_BROWSER_CRAWL_ENABLED", "false") };
+        unsafe { std::env::set_var("TEMU_BROWSER_CRAWL_MAX_PAGES", "7") };
+        unsafe { std::env::set_var("TEMU_BROWSER_CRAWL_MAX_DEPTH", "3") };
+        unsafe { std::env::set_var("TEMU_BROWSER_CRAWL_RENDER_JS", "true") };
+        unsafe { std::env::set_var("TEMU_BROWSER_CRAWL_BROWSER_PATH", "/opt/chrome") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_BROWSER_CRAWL_ENABLED") };
+        unsafe { std::env::remove_var("TEMU_BROWSER_CRAWL_MAX_PAGES") };
+        unsafe { std::env::remove_var("TEMU_BROWSER_CRAWL_MAX_DEPTH") };
+        unsafe { std::env::remove_var("TEMU_BROWSER_CRAWL_RENDER_JS") };
+        unsafe { std::env::remove_var("TEMU_BROWSER_CRAWL_BROWSER_PATH") };
+        assert!(!config.browser_crawl_enabled);
+        assert_eq!(config.browser_crawl_max_pages, 7);
+        assert_eq!(config.browser_crawl_max_depth, 3);
+        assert!(config.browser_crawl_render_js);
+        assert_eq!(
+            config.browser_crawl_browser_path,
+            Some(PathBuf::from("/opt/chrome"))
+        );
     }
 }

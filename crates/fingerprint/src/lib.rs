@@ -111,6 +111,11 @@ mod tests {
             max_recursion_depth: 2,
             wordlist_override: None,
             allow_risky_rules: false,
+            browser_crawl_enabled: true,
+            browser_crawl_max_pages: 25,
+            browser_crawl_max_depth: 2,
+            browser_crawl_render_js: false,
+            browser_crawl_browser_path: None,
         }
     }
 

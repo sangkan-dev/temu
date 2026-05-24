@@ -7,3 +7,7 @@ rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
 max_recursion_depth = 2
 allow_risky_rules = false
+browser_crawl_enabled = true
+browser_crawl_max_pages = 25
+browser_crawl_max_depth = 2
+browser_crawl_render_js = false

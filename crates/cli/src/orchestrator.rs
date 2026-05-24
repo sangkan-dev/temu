@@ -3,7 +3,9 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
 use chrono::Utc;
-use discovery::{DiscoveryMode, PortResult, default_top_ports, run_discovery, scan_ports};
+use discovery::{
+    DiscoveryMode, PortResult, default_top_ports, run_browser_crawl, run_discovery, scan_ports,
+};
 use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
 use hickory_resolver::TokioResolver;
@@ -55,9 +57,10 @@ impl ErrorSummary {
 /// 1. Parse domain from URL → `Target`
 /// 2. Discovery: enumerate subdomains + HTTP probe
 /// 3. Fingerprint: detect technologies on base URL + all live assets
-/// 4. Fuzzing: path discovery on base URL
-/// 5. Vulnerability: rule-based scanning on all discovered URLs
-/// 6. Build and return `ScanResult`
+/// 4. Browser-aware crawling: extract HTML/JavaScript routes and API paths
+/// 5. Fuzzing: path discovery on base URL
+/// 6. Vulnerability: rule-based scanning on all discovered URLs
+/// 7. Build and return `ScanResult`
 pub async fn run_scan(
     url: &str,
     config: &AppConfig,
@@ -159,7 +162,25 @@ pub async fn run_scan_with_ports(
         .collect();
     eprintln!("[+] Fingerprint: {}", tech_summary.join(", "));
 
-    // ── 3. Fuzzing ───────────────────────────────────────────────────────────
+    // ── 3. Browser-aware crawling ────────────────────────────────────────────
+    let browser_assets = match run_browser_crawl(url, config).await {
+        Ok(assets) => assets,
+        Err(e) => {
+            error_summary.push("browser_crawl", &e);
+            tracing::warn!("Browser-aware crawl error (continuing): {e}");
+            Vec::new()
+        }
+    };
+    eprintln!(
+        "[+] Browser crawl: found {} SPA/API assets",
+        browser_assets.len()
+    );
+    info!(
+        "Browser-aware crawl complete: {} assets",
+        browser_assets.len()
+    );
+
+    // ── 4. Fuzzing ───────────────────────────────────────────────────────────
     let fuzzing_assets = match run_fuzzing(url, config).await {
         Ok(assets) => assets,
         Err(e) => {
@@ -171,7 +192,11 @@ pub async fn run_scan_with_ports(
     let paths_found = fuzzing_assets
         .iter()
         .filter(|a| a.asset_type == AssetType::Path)
-        .count() as u32;
+        .count() as u32
+        + browser_assets
+            .iter()
+            .filter(|a| a.asset_type == AssetType::Path)
+            .count() as u32;
     let parameters_found = fuzzing_assets
         .iter()
         .filter(|a| a.asset_type == AssetType::Parameter)
@@ -179,10 +204,11 @@ pub async fn run_scan_with_ports(
     eprintln!("[+] Fuzzing: found {paths_found} paths, {parameters_found} parameters");
     info!("Fuzzing complete: {paths_found} paths, {parameters_found} parameters");
 
-    // ── 4. Vulnerability scan ────────────────────────────────────────────────
+    // ── 5. Vulnerability scan ────────────────────────────────────────────────
     // Collect all URLs to scan: base URL + discovered paths
     let mut all_assets: Vec<Asset> = vec![Asset::new(url, AssetType::Url, "cli::scan")];
     all_assets.extend(discovered.clone());
+    all_assets.extend(browser_assets.clone());
     all_assets.extend(fuzzing_assets.clone());
 
     let all_techs: Vec<fingerprint::TechStack> = tech_stacks.values().flatten().cloned().collect();
@@ -224,6 +250,7 @@ pub async fn run_scan_with_ports(
     error_summary.print();
 
     let mut all_discovered: Vec<Asset> = discovered;
+    all_discovered.extend(browser_assets);
     all_discovered.extend(fuzzing_assets);
     all_discovered.extend(service_assets);
 

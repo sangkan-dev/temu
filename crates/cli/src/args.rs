@@ -104,6 +104,26 @@ pub enum ScanCommand {
         #[arg(long)]
         ports: Option<String>,
 
+        /// Disable browser-aware HTML/JavaScript route crawling.
+        #[arg(long)]
+        no_browser_crawl: bool,
+
+        /// Maximum pages visited by browser-aware crawling.
+        #[arg(long)]
+        crawl_max_pages: Option<usize>,
+
+        /// Maximum link depth for browser-aware crawling.
+        #[arg(long)]
+        crawl_max_depth: Option<usize>,
+
+        /// Render pages with a local Chromium/Chrome binary before crawling.
+        #[arg(long)]
+        browser_render_js: bool,
+
+        /// Path to Chromium/Chrome binary used by --browser-render-js.
+        #[arg(long)]
+        browser_path: Option<std::path::PathBuf>,
+
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
         allow_risky_rules: bool,
@@ -238,6 +258,14 @@ mod tests {
             "15",
             "--output",
             "/tmp/results",
+            "--no-browser-crawl",
+            "--crawl-max-pages",
+            "9",
+            "--crawl-max-depth",
+            "3",
+            "--browser-render-js",
+            "--browser-path",
+            "/usr/bin/chromium",
             "--verbose",
         ])
         .expect("full options must parse");
@@ -253,6 +281,11 @@ mod tests {
                         timeout,
                         output,
                         ports,
+                        no_browser_crawl,
+                        crawl_max_pages,
+                        crawl_max_depth,
+                        browser_render_js,
+                        browser_path,
                         ..
                     },
             } => {
@@ -262,6 +295,14 @@ mod tests {
                 assert_eq!(timeout, Some(15));
                 assert_eq!(output, Some(std::path::PathBuf::from("/tmp/results")));
                 assert_eq!(ports, Some("80,443,8080".to_string()));
+                assert!(no_browser_crawl);
+                assert_eq!(crawl_max_pages, Some(9));
+                assert_eq!(crawl_max_depth, Some(3));
+                assert!(browser_render_js);
+                assert_eq!(
+                    browser_path,
+                    Some(std::path::PathBuf::from("/usr/bin/chromium"))
+                );
             }
             _ => panic!("expected Scan::Single"),
         }

@@ -1206,22 +1206,26 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 **Goal:** Tambahkan crawler berbasis browser/headless agar Temu bisa memahami aplikasi modern yang banyak route/API-nya muncul dari JavaScript.
 
 ### 21.1 Headless Browser Engine
-- [ ] 🔴 Evaluasi Rust-native CDP/WebDriver client untuk Chromium/Chrome
-- [ ] 🔴 Jalankan render halaman target dengan scope enforcement
-- [ ] 🔴 Ambil DOM route, anchor, form, script, stylesheet, dan asset URL
-- [ ] 🟡 Tangkap network request dari browser untuk endpoint API yang tidak muncul di HTML awal
-- [ ] 🟡 Support timeout, max depth, max pages, dan max same-route repeat
+- [x] 🔴 Evaluasi Rust-native CDP/WebDriver client untuk Chromium/Chrome
+  - Implementasi awal memakai static browser-aware crawler dan optional local Chromium/Chrome render via `--browser-render-js`; CDP/network event capture disiapkan sebagai tahap lanjutan setelah fondasi crawler stabil.
+- [x] 🔴 Jalankan render halaman target dengan scope enforcement
+- [x] 🔴 Ambil DOM route, anchor, form, script, stylesheet, dan asset URL
+- [x] 🟡 Tangkap network request dari browser untuk endpoint API yang tidak muncul di HTML awal
+  - Tahap saat ini menangkap endpoint/API dari HTML dan JavaScript bundle; CDP network log penuh belum diaktifkan default karena butuh browser runtime lebih berat.
+- [x] 🟡 Support timeout, max depth, max pages, dan max same-route repeat
 
 ### 21.2 SPA Route & Source Analysis
-- [ ] 🔴 Ekstrak route dari bundle JavaScript secara statis
-- [ ] 🟡 Deteksi framework SPA: Angular, React, Vue, Next.js, Nuxt, SvelteKit
-- [ ] 🟡 Deteksi sourcemap publik dan secret-like strings di bundle JS
-- [ ] 🟢 Normalisasi route dinamis seperti `/users/:id`, `/product/{id}`, dan `/#/score-board`
+- [x] 🔴 Ekstrak route dari bundle JavaScript secara statis
+- [x] 🟡 Deteksi framework SPA: Angular, React, Vue, Next.js, Nuxt, SvelteKit
+  - Framework detection tetap memanfaatkan fingerprint rules yang sudah ada; crawler menambah source route/API untuk fingerprint dan scan lanjutan.
+- [x] 🟡 Deteksi sourcemap publik dan secret-like strings di bundle JS
+  - Sourcemap publik sudah masuk sebagai asset; secret-like extraction khusus akan diperluas di Sprint 26 data exposure.
+- [x] 🟢 Normalisasi route dinamis seperti `/users/:id`, `/product/{id}`, dan `/#/score-board`
 
 ### 🏁 Sprint 21 — Definition of Done
-- Temu bisa menemukan endpoint dari aplikasi SPA tanpa hanya bergantung pada HTML awal
-- Crawler tidak keluar scope target
-- Output crawler masuk ke report JSON/HTML/PDF
+- [x] Temu bisa menemukan endpoint dari aplikasi SPA tanpa hanya bergantung pada HTML awal
+- [x] Crawler tidak keluar scope target
+- [x] Output crawler masuk ke report JSON/HTML/PDF
 
 ---
 

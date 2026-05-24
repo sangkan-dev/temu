@@ -33,6 +33,11 @@ async fn main() -> anyhow::Result<()> {
                 wordlist_size,
                 wordlist,
                 ports,
+                no_browser_crawl,
+                crawl_max_pages,
+                crawl_max_depth,
+                browser_render_js,
+                browser_path,
                 allow_risky_rules,
             } => {
                 // Validate URL early
@@ -53,6 +58,21 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if let Some(t) = timeout {
                     config.timeout_secs = t;
+                }
+                if no_browser_crawl {
+                    config.browser_crawl_enabled = false;
+                }
+                if let Some(max_pages) = crawl_max_pages {
+                    config.browser_crawl_max_pages = max_pages;
+                }
+                if let Some(max_depth) = crawl_max_depth {
+                    config.browser_crawl_max_depth = max_depth;
+                }
+                if browser_render_js {
+                    config.browser_crawl_render_js = true;
+                }
+                if let Some(path) = browser_path {
+                    config.browser_crawl_browser_path = Some(path);
                 }
                 if allow_risky_rules {
                     eprintln!(
