@@ -45,6 +45,7 @@ pub enum AssetType {
     Ip,
     Url,
     Service,
+    ApiEndpoint,
 }
 
 impl fmt::Display for AssetType {
@@ -56,6 +57,7 @@ impl fmt::Display for AssetType {
             AssetType::Ip => write!(f, "IP"),
             AssetType::Url => write!(f, "URL"),
             AssetType::Service => write!(f, "Service"),
+            AssetType::ApiEndpoint => write!(f, "API Endpoint"),
         }
     }
 }
@@ -191,6 +193,7 @@ mod tests {
         assert_eq!(AssetType::Ip.to_string(), "IP");
         assert_eq!(AssetType::Url.to_string(), "URL");
         assert_eq!(AssetType::Service.to_string(), "Service");
+        assert_eq!(AssetType::ApiEndpoint.to_string(), "API Endpoint");
     }
 
     #[test]
@@ -250,5 +253,7 @@ mod tests {
         assert_eq!(decoded, AssetType::Url);
         let decoded: AssetType = serde_json::from_str("\"service\"").unwrap();
         assert_eq!(decoded, AssetType::Service);
+        let decoded: AssetType = serde_json::from_str("\"api_endpoint\"").unwrap();
+        assert_eq!(decoded, AssetType::ApiEndpoint);
     }
 }

@@ -7,6 +7,7 @@ edition = "2024"
 temu_core = { path = "../core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }

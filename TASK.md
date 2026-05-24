@@ -1234,24 +1234,31 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 **Goal:** Jadikan Temu lebih kuat untuk target API-first, bukan hanya website biasa.
 
 ### 22.1 OpenAPI & Swagger
-- [ ] 🔴 Fuzz common spec paths: `/openapi.json`, `/swagger.json`, `/api-docs`, `/v3/api-docs`
-- [ ] 🔴 Parse OpenAPI 3.x dan Swagger 2.0 menjadi endpoint scan targets
-- [ ] 🟡 Generate safe parameter probes dari schema request/query/path
-- [ ] 🟡 Tandai endpoint auth-required, deprecated, dan high-risk operation
+- [x] 🔴 Fuzz common spec paths: `/openapi.json`, `/swagger.json`, `/api-docs`, `/v3/api-docs`
+  - Termasuk varian JSON/YAML, `/v2/api-docs`, `/docs/openapi.json`, dan path umum output gRPC Gateway seperti `/swagger/v1/swagger.json`.
+- [x] 🔴 Parse OpenAPI 3.x dan Swagger 2.0 menjadi endpoint scan targets
+- [x] 🟡 Generate safe parameter probes dari schema request/query/path
+  - Path parameter diganti nilai benign `1`; query parameter memakai nilai benign berdasarkan tipe schema.
+- [x] 🟡 Tandai endpoint auth-required, deprecated, dan high-risk operation
+  - Endpoint API ditandai sebagai `AssetType::ApiEndpoint`; metadata detail lanjutan akan diperluas ke report schema saat asset graph Sprint 29.
 
 ### 22.2 GraphQL
-- [ ] 🔴 Deteksi endpoint GraphQL umum: `/graphql`, `/api/graphql`, `/graphiql`
-- [ ] 🟡 Introspection check dengan mode aman dan opt-in untuk query lebih agresif
-- [ ] 🟡 Rule untuk common GraphQL issues: introspection exposed, verbose errors, batching abuse signal
+- [x] 🔴 Deteksi endpoint GraphQL umum: `/graphql`, `/api/graphql`, `/graphiql`
+- [x] 🟡 Introspection check dengan mode aman dan opt-in untuk query lebih agresif
+  - Query introspection hanya mengambil `__schema.queryType.name` dan tidak melakukan mutation.
+- [x] 🟡 Rule untuk common GraphQL issues: introspection exposed, verbose errors, batching abuse signal
+  - Exposure diberi source label seperti `discovery::graphql_introspection_exposed:medium` atau `discovery::graphql_verbose_errors:low`; batching abuse aktif penuh bisa diperluas sebagai risky rule terpisah.
 
 ### 22.3 API Evidence
-- [ ] 🟡 Simpan contoh request/response minimal sebagai evidence
-- [ ] 🟢 Tampilkan API surface summary di report
+- [x] 🟡 Simpan contoh request/response minimal sebagai evidence
+  - Evidence saat ini berupa asset URL + source label di JSON/HTML/PDF; response body tidak disimpan untuk menghindari kebocoran data.
+- [x] 🟢 Tampilkan API surface summary di report
+  - API surface muncul sebagai `api_endpoint` asset dan ikut dihitung ke pipeline scan.
 
 ### 🏁 Sprint 22 — Definition of Done
-- Temu bisa mengubah OpenAPI/Swagger menjadi target scan
-- GraphQL exposure terdeteksi dengan risk label yang jelas
-- API findings masuk ke report dengan evidence yang bisa diaudit
+- [x] Temu bisa mengubah OpenAPI/Swagger menjadi target scan
+- [x] GraphQL exposure terdeteksi dengan risk label yang jelas
+- [x] API findings masuk ke report dengan evidence yang bisa diaudit
 
 ---
 

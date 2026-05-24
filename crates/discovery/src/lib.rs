@@ -1,5 +1,6 @@
 // Discovery crate — subdomain enumeration, DNS resolution, HTTP probing
 
+pub mod api;
 pub mod browser;
 pub mod dns;
 pub mod heuristic;
@@ -9,6 +10,7 @@ pub mod probe;
 pub mod wordlist;
 pub mod zone_transfer;
 
+pub use api::run_api_discovery;
 pub use browser::run_browser_crawl;
 pub use dns::DnsResolver;
 pub use heuristic::generate_candidates;
