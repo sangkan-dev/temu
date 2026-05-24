@@ -29,7 +29,8 @@ pub fn generate_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, 
     let filename = format!("{date}_{sanitized}.json");
     let path = output_dir.join(&filename);
 
-    let json = serde_json::to_string_pretty(result)
+    let redacted_result = crate::redaction::redact_scan_result(result);
+    let json = serde_json::to_string_pretty(&redacted_result)
         .map_err(|e| TemuError::Parse(format!("Failed to serialize ScanResult: {e}")))?;
 
     std::fs::write(&path, json).map_err(|e| {

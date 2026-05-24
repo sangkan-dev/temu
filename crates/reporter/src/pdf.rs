@@ -331,7 +331,7 @@ impl PdfReport {
         y -= 10.0;
         y = self.wrapped_text(
             layer,
-            &vulnerability.proof,
+            &crate::redaction::redact_sensitive_text(&vulnerability.proof),
             9.5,
             (MARGIN_LEFT_MM, y),
             96,

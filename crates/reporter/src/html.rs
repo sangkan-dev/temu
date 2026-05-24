@@ -199,7 +199,7 @@ impl VulnerabilityView {
             severity_class: severity.to_lowercase(),
             severity,
             cvss_score: vuln.cvss_score,
-            proof: vuln.proof.clone(),
+            proof: crate::redaction::redact_sensitive_text(&vuln.proof),
             url: vuln.url.clone(),
             parameter: vuln.parameter.clone().unwrap_or_else(|| "-".to_string()),
             verified: vuln.verified,

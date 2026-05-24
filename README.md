@@ -173,6 +173,18 @@ Discovery modes:
 - `bruteforce`: DNS wordlist mode.
 - `heuristic`: generated candidate names only.
 
+## Stateful DAST
+
+The normal scan pipeline also runs a read-only stateful pass after browser/API
+discovery. It detects HTML forms, input names/types, CSRF token fields, reflected
+GET form input, admin/debug endpoint exposure, IDOR/BOLA signals from bounded
+numeric identifier mutation, verbose framework errors, and secrets/PII-like data
+in HTML, JavaScript, or source-map responses.
+
+Stateful probes stay same-origin, cap replay volume, reuse the configured session
+headers, and avoid POST/write/delete requests. Report evidence is redacted before
+JSON, HTML, and PDF output are written.
+
 ## Reports
 
 Each completed scan writes:

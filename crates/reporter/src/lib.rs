@@ -3,6 +3,7 @@
 pub mod html;
 pub mod json;
 pub mod pdf;
+pub mod redaction;
 pub mod types;
 
 pub use html::generate_html;

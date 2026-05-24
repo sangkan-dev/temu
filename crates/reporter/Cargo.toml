@@ -13,6 +13,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 tera = { workspace = true }
 printpdf = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

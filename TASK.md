@@ -1366,25 +1366,31 @@ bukan memasukkannya otomatis ke manifest aktif.
 **Goal:** Naik dari request fuzzing sederhana menjadi pengujian stateful yang lebih dekat ke workflow aplikasi nyata.
 
 ### 26.1 Form & Workflow Scanner
-- [ ] 🔴 Deteksi form, input type, method, action, dan CSRF token
-- [ ] 🔴 Jalankan probe read-only untuk validation bypass, verbose error, dan reflected input
-- [ ] 🟡 Track state antar request agar tidak spam endpoint yang sama
-- [ ] 🟡 Support safe replay dari browser-captured requests
+- [x] 🔴 Deteksi form, input type, method, action, dan CSRF token
+- [x] 🔴 Jalankan probe read-only untuk validation bypass, verbose error, dan reflected input
+- [x] 🟡 Track state antar request agar tidak spam endpoint yang sama
+- [x] 🟡 Support safe replay dari browser-captured requests
 
 ### 26.2 Authorization Heuristics
-- [ ] 🟡 Multi-role differential scan untuk IDOR/BOLA signal
-- [ ] 🟡 Numeric/id parameter mutation dengan batas aman
-- [ ] 🟡 Deteksi endpoint admin/debug yang accessible dari role rendah
+- [x] 🟡 Multi-role differential scan untuk IDOR/BOLA signal
+- [x] 🟡 Numeric/id parameter mutation dengan batas aman
+- [x] 🟡 Deteksi endpoint admin/debug yang accessible dari role rendah
 
 ### 26.3 Data Exposure
-- [ ] 🔴 Deteksi secrets di HTML/JS/source maps
-- [ ] 🟡 Deteksi PII-like response dengan redaction di report
-- [ ] 🟡 Deteksi verbose stack trace dan framework debug pages
+- [x] 🔴 Deteksi secrets di HTML/JS/source maps
+- [x] 🟡 Deteksi PII-like response dengan redaction di report
+- [x] 🟡 Deteksi verbose stack trace dan framework debug pages
 
 ### 🏁 Sprint 26 — Definition of Done
 - Temu bisa memberi sinyal business logic issue tanpa mengubah data target
 - Evidence sensitif direduksi/redacted di report
 - Stateful scanner tetap punya guardrail scope dan rate limit
+
+**Implementasi:** Modul `cli::stateful` berjalan setelah browser/API/fuzzing discovery dan hanya
+melakukan GET/read-only same-origin dengan budget request terbatas. Modul ini mendeteksi form +
+CSRF, reflected GET input, admin/debug endpoint, mutasi numeric ID terbatas, differential role
+signal saat session profile memiliki beberapa role, serta secrets/PII/stack trace dengan evidence
+yang sudah direduksi. Reporter JSON/HTML/PDF juga meredaksi proof sebelum ditulis.
 
 ---
 

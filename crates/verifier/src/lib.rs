@@ -115,6 +115,10 @@ pub async fn run_verification(vulns: &[Vulnerability], config: &AppConfig) -> Ve
     let mut false_positives = 0usize;
 
     for vuln in vulns {
+        if vuln.verified {
+            verified.push(vuln.clone());
+            continue;
+        }
         let result = if let Some(rule) = rules_by_id.get(&vuln.id) {
             verify_with_rule(vuln, rule, config, &client).await
         } else {

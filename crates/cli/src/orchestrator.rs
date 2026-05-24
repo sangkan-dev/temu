@@ -16,6 +16,8 @@ use tracing::info;
 use verifier::run_verification;
 use vulnerability::run_vulnerability_scan;
 
+use crate::stateful::run_stateful_dast;
+
 const MAX_CIDR_HOSTS: u64 = 65_536;
 
 /// Results from a multi-target scan, including aggregate and per-target reports.
@@ -222,7 +224,33 @@ pub async fn run_scan_with_ports(
     eprintln!("[+] Fuzzing: found {paths_found} paths, {parameters_found} parameters");
     info!("Fuzzing complete: {paths_found} paths, {parameters_found} parameters");
 
-    // ── 6. Vulnerability scan ────────────────────────────────────────────────
+    // ── 6. Stateful DAST ─────────────────────────────────────────────────────
+    let stateful_result = match run_stateful_dast(
+        url,
+        &all_stateful_surface(&browser_assets, &api_assets, &fuzzing_assets),
+        config,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            error_summary.push("stateful_dast", &e);
+            tracing::warn!("Stateful DAST error (continuing): {e}");
+            Default::default()
+        }
+    };
+    eprintln!(
+        "[+] Stateful DAST: found {} workflow assets, {} signal{}",
+        stateful_result.assets.len(),
+        stateful_result.findings.len(),
+        if stateful_result.findings.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
+    );
+
+    // ── 7. Vulnerability scan ────────────────────────────────────────────────
     // Collect all URLs to scan: base URL + discovered paths
     let mut all_assets: Vec<Asset> = vec![Asset::new(url, AssetType::Url, "cli::scan")];
     all_assets.extend(discovered.clone());
@@ -241,6 +269,7 @@ pub async fn run_scan_with_ports(
                 Vec::new()
             }
         };
+    detected_vulnerabilities.extend(stateful_result.findings.clone());
     match cve_client::check_cves(&all_techs, config).await {
         Ok(cve_vulnerabilities) => {
             if !cve_vulnerabilities.is_empty() {
@@ -275,6 +304,7 @@ pub async fn run_scan_with_ports(
     all_discovered.extend(browser_assets);
     all_discovered.extend(api_assets);
     all_discovered.extend(fuzzing_assets);
+    all_discovered.extend(stateful_result.assets);
     all_discovered.extend(service_assets);
 
     Ok(ScanResult {
@@ -293,6 +323,14 @@ pub async fn run_scan_with_ports(
             duration_secs,
         },
     })
+}
+
+fn all_stateful_surface(browser: &[Asset], api: &[Asset], fuzzing: &[Asset]) -> Vec<Asset> {
+    let mut assets = Vec::with_capacity(browser.len() + api.len() + fuzzing.len());
+    assets.extend_from_slice(browser);
+    assets.extend_from_slice(api);
+    assets.extend_from_slice(fuzzing);
+    assets
 }
 
 fn session_profile_asset(config: &AppConfig) -> Option<Asset> {
