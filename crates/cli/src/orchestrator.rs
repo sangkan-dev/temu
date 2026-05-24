@@ -269,6 +269,9 @@ pub async fn run_scan_with_ports(
     error_summary.print();
 
     let mut all_discovered: Vec<Asset> = discovered;
+    if let Some(session_asset) = session_profile_asset(config) {
+        all_discovered.push(session_asset);
+    }
     all_discovered.extend(browser_assets);
     all_discovered.extend(api_assets);
     all_discovered.extend(fuzzing_assets);
@@ -290,6 +293,21 @@ pub async fn run_scan_with_ports(
             duration_secs,
         },
     })
+}
+
+fn session_profile_asset(config: &AppConfig) -> Option<Asset> {
+    let profile = config.session_profile.as_ref()?;
+    let scope = profile.base_url_scope.as_deref().unwrap_or("all-targets");
+    let validate = if profile.validate_url.is_some() {
+        "validate=true"
+    } else {
+        "validate=false"
+    };
+    Some(Asset::new(
+        format!("authenticated-session scope={scope} {validate}"),
+        AssetType::Url,
+        "cli::session_profile",
+    ))
 }
 
 /// Loads scan targets from a file containing one URL per line.

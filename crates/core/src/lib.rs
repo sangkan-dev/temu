@@ -6,10 +6,12 @@ pub mod error;
 pub mod logging;
 pub mod macros;
 pub mod resilience;
+pub mod session;
 pub mod types;
 
 pub use config::AppConfig;
 pub use error::TemuError;
 pub use logging::{init_logging, init_logging_with_file};
 pub use resilience::{AdaptiveRateLimiter, ResilienceMetrics, retry_delay};
+pub use session::SessionProfile;
 pub use types::{Asset, AssetType, Scope, Severity, Target, Vulnerability};

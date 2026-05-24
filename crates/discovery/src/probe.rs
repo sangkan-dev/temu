@@ -44,18 +44,19 @@ pub async fn probe_http(host: &str, timeout: Duration) -> Option<ProbeResult> {
         .ok()?;
     let limiter = AdaptiveRateLimiter::new(50);
 
-    probe_http_with_client(host, &client, &limiter).await
+    probe_http_with_client(host, &client, &limiter, None).await
 }
 
 async fn probe_http_with_client(
     host: &str,
     client: &Client,
     limiter: &AdaptiveRateLimiter,
+    config: Option<&AppConfig>,
 ) -> Option<ProbeResult> {
     // Try HTTPS first, then HTTP
     for scheme in &["https", "http"] {
         let url = format!("{scheme}://{host}");
-        match send_probe_request(client, limiter, &url, Some(host)).await {
+        match send_probe_request(client, limiter, &url, Some(host), config).await {
             Ok(response) => {
                 let status_code = response.status().as_u16();
                 let redirect_url = response
@@ -118,13 +119,14 @@ pub async fn probe_all(hosts: &[String], config: &AppConfig) -> Vec<ProbeResult>
         let sem = Arc::clone(&semaphore);
         let client = Arc::clone(&client);
         let limiter = Arc::clone(&limiter);
+        let config = config.clone();
 
         let handle = tokio::spawn(async move {
             let Ok(_permit) = sem.acquire().await else {
                 warn!("HTTP probe skipped because semaphore is closed");
                 return None;
             };
-            probe_http_with_client(&host, &client, &limiter).await
+            probe_http_with_client(&host, &client, &limiter, Some(&config)).await
         });
 
         handles.push(handle);
@@ -155,11 +157,18 @@ async fn send_probe_request(
     limiter: &AdaptiveRateLimiter,
     url: &str,
     host: Option<&str>,
+    config: Option<&AppConfig>,
 ) -> Result<reqwest::Response, reqwest::Error> {
     for attempt in 0..=MAX_RETRIES {
         limiter.before_request(host).await;
         let started = Instant::now();
-        let result = client.get(url).send().await;
+        let mut request = client.get(url);
+        if let Some(config) = config {
+            for (name, value) in config.session_headers_for_url(url) {
+                request = request.header(name, value);
+            }
+        }
+        let result = request.send().await;
         let elapsed = started.elapsed();
         limiter.finish_request();
 
@@ -187,7 +196,13 @@ async fn send_probe_request(
         }
     }
 
-    client.get(url).send().await
+    let mut request = client.get(url);
+    if let Some(config) = config {
+        for (name, value) in config.session_headers_for_url(url) {
+            request = request.header(name, value);
+        }
+    }
+    request.send().await
 }
 
 fn is_transient_error(error: &reqwest::Error) -> bool {

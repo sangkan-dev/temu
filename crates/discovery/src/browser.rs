@@ -25,6 +25,13 @@ static SOURCE_MAP_RE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r#"(?m)sourceMappingURL=([^\s]+)"#));
 static DYNAMIC_ROUTE_RE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r#"(?s)["'`]((?:/|#/)[A-Za-z0-9_./{}:$*?+\-]+)["'`]"#));
+static FORM_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r#"(?is)<form\b[^>]*>.*?</form>"#));
+static HIDDEN_INPUT_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?is)<input\b[^>]*type\s*=\s*["']?hidden["']?[^>]*(?:name\s*=\s*["']([^"']+)["'][^>]*value\s*=\s*["']([^"']*)["']|value\s*=\s*["']([^"']*)["'][^>]*name\s*=\s*["']([^"']+)["'])"#,
+    )
+});
 
 #[derive(Debug, Clone)]
 struct BrowserDocument {
@@ -81,7 +88,7 @@ pub async fn run_browser_crawl(
             if let Ok(url) = Url::parse(network_url)
                 && is_same_origin(&base, &url)
             {
-                record_url(
+                record_url_if_safe(
                     &mut assets,
                     &mut discovered,
                     url.clone(),
@@ -98,7 +105,7 @@ pub async fn run_browser_crawl(
             if let Some(url) = normalize_candidate(&page_url, &candidate)
                 && is_same_origin(&base, &url)
             {
-                record_url(
+                record_url_if_safe(
                     &mut assets,
                     &mut discovered,
                     url.clone(),
@@ -116,14 +123,15 @@ pub async fn run_browser_crawl(
                 continue;
             }
 
-            let Some(js_body) = fetch_text(&client, script_url.clone(), MAX_JS_BYTES).await else {
+            let Some(js_body) = fetch_text(&client, script_url.clone(), MAX_JS_BYTES, config).await
+            else {
                 continue;
             };
             for candidate in extract_js_candidates(&js_body) {
                 if let Some(url) = normalize_candidate(&script_url, &candidate)
                     && is_same_origin(&base, &url)
                 {
-                    record_url(
+                    record_url_if_safe(
                         &mut assets,
                         &mut discovered,
                         url.clone(),
@@ -145,9 +153,18 @@ pub async fn run_browser_crawl(
     Ok(assets)
 }
 
-async fn fetch_text(client: &Client, url: Url, max_bytes: usize) -> Option<String> {
+async fn fetch_text(
+    client: &Client,
+    url: Url,
+    max_bytes: usize,
+    config: &AppConfig,
+) -> Option<String> {
     debug!("Browser-aware crawl fetch {url}");
-    let response = match client.get(url.clone()).send().await {
+    let mut request = client.get(url.clone());
+    for (name, value) in config.session_headers_for_url(url.as_str()) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             warn!("Browser-aware crawl request failed for {url}: {e}");
@@ -175,15 +192,21 @@ async fn fetch_page_document(
     config: &AppConfig,
 ) -> Option<BrowserDocument> {
     if config.browser_crawl_render_js {
-        match render_dom_with_browser(url.clone(), config).await {
-            Some(document) => return Some(document),
-            None => {
-                warn!("Browser render unavailable for {url}; falling back to static fetch");
+        if config.session_headers_for_url(url.as_str()).is_empty() {
+            match render_dom_with_browser(url.clone(), config).await {
+                Some(document) => return Some(document),
+                None => {
+                    warn!("Browser render unavailable for {url}; falling back to static fetch");
+                }
             }
+        } else {
+            warn!(
+                "Browser render skipped for authenticated URL {url}; static authenticated fetch will be used"
+            );
         }
     }
 
-    fetch_text(client, url, MAX_BODY_BYTES)
+    fetch_text(client, url, MAX_BODY_BYTES, config)
         .await
         .map(|body| BrowserDocument {
             body,
@@ -331,7 +354,55 @@ fn extract_candidates(body: &str) -> Vec<String> {
         );
     }
     candidates.extend(extract_js_candidates(body));
+    candidates.extend(extract_form_actions_with_csrf(body));
     candidates
+}
+
+fn extract_form_actions_with_csrf(body: &str) -> Vec<String> {
+    let Ok(form_re) = FORM_RE.as_ref() else {
+        return Vec::new();
+    };
+
+    form_re
+        .find_iter(body)
+        .filter_map(|form| {
+            let form = form.as_str();
+            let action = LINK_ATTR_RE
+                .as_ref()
+                .ok()?
+                .captures_iter(form)
+                .filter_map(|capture| capture.get(1))
+                .map(|match_| match_.as_str())
+                .find(|candidate| !candidate.trim().is_empty())?;
+            let Some((name, value)) = extract_csrf_hidden_input(form) else {
+                return Some(action.to_string());
+            };
+            let separator = if action.contains('?') { '&' } else { '?' };
+            Some(format!("{action}{separator}{name}={value}"))
+        })
+        .collect()
+}
+
+fn extract_csrf_hidden_input(form: &str) -> Option<(String, String)> {
+    let regex = HIDDEN_INPUT_RE.as_ref().ok()?;
+    for capture in regex.captures_iter(form) {
+        let name = capture
+            .get(1)
+            .or_else(|| capture.get(4))
+            .map(|match_| match_.as_str().to_string())?;
+        if !name.to_ascii_lowercase().contains("csrf")
+            && !name.to_ascii_lowercase().contains("token")
+        {
+            continue;
+        }
+        let value = capture
+            .get(2)
+            .or_else(|| capture.get(3))
+            .map(|match_| match_.as_str().to_string())
+            .unwrap_or_default();
+        return Some((name, value));
+    }
+    None
 }
 
 fn extract_js_candidates(body: &str) -> Vec<String> {
@@ -434,17 +505,37 @@ fn is_javascript_asset(url: &Url) -> bool {
     path.ends_with(".js") || path.ends_with(".mjs")
 }
 
-fn record_url(
+fn record_url_if_safe(
     assets: &mut Vec<Asset>,
     discovered: &mut HashSet<String>,
     mut url: Url,
     discovered_by: &str,
 ) {
+    if is_destructive_navigation(&url) {
+        debug!("Skipping destructive/logout navigation candidate {url}");
+        return;
+    }
     url.set_fragment(None);
     let url = url.to_string();
     if discovered.insert(url.clone()) {
         assets.push(Asset::new(url, AssetType::Path, discovered_by));
     }
+}
+
+fn is_destructive_navigation(url: &Url) -> bool {
+    let lowered = url.as_str().to_ascii_lowercase();
+    [
+        "logout",
+        "log-out",
+        "signout",
+        "sign-out",
+        "delete",
+        "destroy",
+        "remove",
+        "deactivate",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
 }
 
 fn canonical_without_fragment(url: &Url) -> String {
@@ -478,6 +569,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 
@@ -524,6 +616,31 @@ mod tests {
         assert!(urls.contains("http://127.0.0.1:3000/api/products"));
         assert!(urls.contains("https://example.com/assets/app.js"));
         assert!(!urls.contains("data:image/png;base64,abc"));
+    }
+
+    #[test]
+    fn test_extract_form_actions_preserves_csrf_token() {
+        let body = r#"
+            <form action="/profile">
+              <input type="hidden" name="_csrf" value="abc123">
+            </form>
+            <a href="/logout">logout</a>
+        "#;
+
+        let candidates = extract_candidates(body);
+        let base = Url::parse("https://example.com").unwrap();
+        let urls: Vec<_> = candidates
+            .iter()
+            .filter_map(|candidate| normalize_candidate(&base, candidate))
+            .filter(|url| !is_destructive_navigation(url))
+            .map(|url| url.to_string())
+            .collect();
+
+        assert!(
+            urls.iter()
+                .any(|url| url == "https://example.com/profile?_csrf=abc123")
+        );
+        assert!(!urls.iter().any(|url| url.contains("logout")));
     }
 
     #[tokio::test]

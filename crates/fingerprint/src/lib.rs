@@ -43,8 +43,11 @@ pub async fn run_fingerprint(url: &str, config: &AppConfig) -> Result<Vec<TechSt
         .build()
         .map_err(|e| TemuError::Network(e.to_string()))?;
 
-    let response = client
-        .get(url)
+    let mut request = client.get(url);
+    for (name, value) in config.session_headers_for_url(url) {
+        request = request.header(name, value);
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| TemuError::Network(format!("Fingerprint request to {url} failed: {e}")))?;
@@ -116,6 +119,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 

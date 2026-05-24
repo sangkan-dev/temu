@@ -11,3 +11,17 @@ browser_crawl_enabled = true
 browser_crawl_max_pages = 25
 browser_crawl_max_depth = 2
 browser_crawl_render_js = false
+
+# Optional authenticated scanning profile. Prefer --session-profile or
+# TEMU_SESSION_PROFILE for secrets instead of storing tokens here.
+# [session_profile]
+# base_url_scope = "https://example.com"
+# validate_url = "https://example.com/profile"
+# bearer_token = "env:TEMU_SESSION_BEARER_TOKEN"
+# refresh_command = ["pass", "show", "temu/example-token"]
+# [session_profile.headers]
+# X-API-Key = "env:TEMU_SESSION_API_KEY"
+# [session_profile.cookies]
+# session = "env:TEMU_SESSION_COOKIE_VALUE"
+# [session_profile.roles.admin]
+# bearer_token = "env:TEMU_ADMIN_TOKEN"

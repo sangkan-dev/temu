@@ -20,6 +20,7 @@ fn make_config(dictionaries_dir: PathBuf) -> AppConfig {
         browser_crawl_max_depth: 2,
         browser_crawl_render_js: false,
         browser_crawl_browser_path: None,
+        session_profile: None,
     }
 }
 

@@ -55,7 +55,7 @@ pub async fn run_api_discovery(
         let Some(spec_url) = base.join(spec_path.trim_start_matches('/')).ok() else {
             continue;
         };
-        let Some(body) = fetch_text(&client, spec_url.clone(), MAX_SPEC_BYTES).await else {
+        let Some(body) = fetch_text(&client, spec_url.clone(), MAX_SPEC_BYTES, config).await else {
             continue;
         };
         let Some(spec) = parse_spec_document(&body) else {
@@ -82,7 +82,7 @@ pub async fn run_api_discovery(
         let Some(graphql_url) = base.join(graphql_path.trim_start_matches('/')).ok() else {
             continue;
         };
-        if let Some(asset_source) = detect_graphql(&client, graphql_url.clone()).await {
+        if let Some(asset_source) = detect_graphql(&client, graphql_url.clone(), config).await {
             record_asset(&mut assets, &mut seen, graphql_url.as_str(), &asset_source);
         }
     }
@@ -91,9 +91,18 @@ pub async fn run_api_discovery(
     Ok(assets)
 }
 
-async fn fetch_text(client: &Client, url: Url, max_bytes: usize) -> Option<String> {
+async fn fetch_text(
+    client: &Client,
+    url: Url,
+    max_bytes: usize,
+    config: &AppConfig,
+) -> Option<String> {
     debug!("API discovery fetch {url}");
-    let response = match client.get(url.clone()).send().await {
+    let mut request = client.get(url.clone());
+    for (name, value) in config.session_headers_for_url(url.as_str()) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             warn!("API discovery request failed for {url}: {e}");
@@ -218,8 +227,8 @@ fn benign_value_for_parameter(parameter: &serde_json::Map<String, Value>) -> Str
     }
 }
 
-async fn detect_graphql(client: &Client, graphql_url: Url) -> Option<String> {
-    let body = fetch_text(client, graphql_url.clone(), MAX_GRAPHQL_BYTES).await;
+async fn detect_graphql(client: &Client, graphql_url: Url, config: &AppConfig) -> Option<String> {
+    let body = fetch_text(client, graphql_url.clone(), MAX_GRAPHQL_BYTES, config).await;
     if let Some(body) = &body
         && (body.contains("GraphiQL")
             || body.contains("graphql")
@@ -232,12 +241,13 @@ async fn detect_graphql(client: &Client, graphql_url: Url) -> Option<String> {
     let introspection = json!({
         "query": "query TemuIntrospectionProbe { __schema { queryType { name } } }"
     });
-    let response = client
+    let mut request = client
         .request(Method::POST, graphql_url.clone())
-        .json(&introspection)
-        .send()
-        .await
-        .ok()?;
+        .json(&introspection);
+    for (name, value) in config.session_headers_for_url(graphql_url.as_str()) {
+        request = request.header(name, value);
+    }
+    let response = request.send().await.ok()?;
     if !response.status().is_success() {
         return None;
     }
@@ -274,7 +284,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::matchers::{body_string_contains, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn test_config() -> AppConfig {
@@ -294,6 +304,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 
@@ -377,5 +388,36 @@ mod tests {
         assert!(urls.contains(users_url.as_str()));
         assert!(urls.contains(graphql_url.as_str()));
         assert!(sources.contains("discovery::graphql_introspection_exposed:medium"));
+    }
+
+    #[tokio::test]
+    async fn test_api_discovery_applies_session_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/openapi.json"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "openapi": "3.0.0",
+                "paths": {"/private": {"get": {}}}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let mut config = test_config();
+        config.session_profile = Some(temu_core::SessionProfile {
+            base_url_scope: Some(server.uri()),
+            bearer_token: Some("test-token".to_string()),
+            ..temu_core::SessionProfile::default()
+        });
+
+        let assets = run_api_discovery(&server.uri(), &config)
+            .await
+            .expect("api discovery should succeed");
+
+        assert!(assets.iter().any(|asset| asset.url.ends_with("/private")));
     }
 }

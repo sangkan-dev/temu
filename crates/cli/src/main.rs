@@ -30,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
                 timeout,
                 output,
                 config: config_path,
+                session_profile,
+                session_role,
                 wordlist_size,
                 wordlist,
                 ports,
@@ -74,6 +76,17 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(path) = browser_path {
                     config.browser_crawl_browser_path = Some(path);
                 }
+                if let Some(path) = session_profile {
+                    config = config
+                        .with_session_profile(&path)
+                        .with_context(|| format!("Failed to load session profile from {path:?}"))?;
+                }
+                if let Some(role) = session_role {
+                    config
+                        .select_session_role(&role)
+                        .with_context(|| format!("Failed to select session role {role:?}"))?;
+                }
+                prepare_session_profile(&mut config).await?;
                 if allow_risky_rules {
                     eprintln!(
                         "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
@@ -121,11 +134,24 @@ async fn main() -> anyhow::Result<()> {
             }
             ScanCommand::File {
                 list,
+                session_profile,
+                session_role,
                 allow_risky_rules,
             } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
                 let mut config =
                     temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                if let Some(path) = session_profile {
+                    config = config
+                        .with_session_profile(&path)
+                        .with_context(|| format!("Failed to load session profile from {path:?}"))?;
+                }
+                if let Some(role) = session_role {
+                    config
+                        .select_session_role(&role)
+                        .with_context(|| format!("Failed to select session role {role:?}"))?;
+                }
+                prepare_session_profile(&mut config).await?;
                 if allow_risky_rules {
                     eprintln!(
                         "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
@@ -146,11 +172,24 @@ async fn main() -> anyhow::Result<()> {
             ScanCommand::Network {
                 cidr,
                 ports,
+                session_profile,
+                session_role,
                 allow_risky_rules,
             } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
                 let mut config =
                     temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                if let Some(path) = session_profile {
+                    config = config
+                        .with_session_profile(&path)
+                        .with_context(|| format!("Failed to load session profile from {path:?}"))?;
+                }
+                if let Some(role) = session_role {
+                    config
+                        .select_session_role(&role)
+                        .with_context(|| format!("Failed to select session role {role:?}"))?;
+                }
+                prepare_session_profile(&mut config).await?;
                 if allow_risky_rules {
                     eprintln!(
                         "[!] Risky rules enabled: Temu may execute intrusive, destructive, or DoS-prone probes at your own risk."
@@ -285,4 +324,75 @@ fn print_report_paths(paths: &[std::path::PathBuf]) {
     for path in paths {
         println!("{}", path.display());
     }
+}
+
+async fn prepare_session_profile(config: &mut temu_core::AppConfig) -> anyhow::Result<()> {
+    refresh_session_from_command(config).await?;
+    validate_session_profile(config).await
+}
+
+async fn refresh_session_from_command(config: &mut temu_core::AppConfig) -> anyhow::Result<()> {
+    let Some(profile) = &mut config.session_profile else {
+        return Ok(());
+    };
+    if profile.refresh_command.is_empty() {
+        return Ok(());
+    }
+
+    let program = &profile.refresh_command[0];
+    let output = tokio::process::Command::new(program)
+        .args(&profile.refresh_command[1..])
+        .output()
+        .await
+        .with_context(|| format!("Failed to run session refresh command {program:?}"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "Session refresh command failed with status {}",
+            output.status
+        );
+    }
+
+    let token = String::from_utf8(output.stdout)
+        .with_context(|| "Session refresh command returned non-UTF8 output")?
+        .trim()
+        .to_string();
+    if token.is_empty() {
+        anyhow::bail!("Session refresh command returned an empty token");
+    }
+    profile.bearer_token = Some(token);
+    eprintln!("[+] Session token refreshed from command");
+    Ok(())
+}
+
+async fn validate_session_profile(config: &temu_core::AppConfig) -> anyhow::Result<()> {
+    let Some(profile) = &config.session_profile else {
+        return Ok(());
+    };
+    let Some(validate_url) = profile.validate_url.as_deref() else {
+        return Ok(());
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(config.timeout_secs))
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .user_agent(&config.user_agent)
+        .build()
+        .with_context(|| "Failed to build session validation client")?;
+    let mut request = client.get(validate_url);
+    for (name, value) in config.session_headers_for_url(validate_url) {
+        request = request.header(name, value);
+    }
+
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("Session validation request failed: {validate_url}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("Session validation failed for {validate_url}: HTTP {status}");
+    }
+
+    eprintln!("[+] Session validation succeeded: {validate_url}");
+    Ok(())
 }

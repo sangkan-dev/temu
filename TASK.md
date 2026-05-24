@@ -1267,21 +1267,28 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 **Goal:** Support scan area yang butuh login/session tanpa hardcode credential di source.
 
 ### 23.1 Session Profile
-- [ ] 🔴 Support session profile file berisi cookie, header, bearer token, dan base URL scope
-- [ ] 🔴 Support env var untuk secrets/token agar tidak tersimpan di repo
-- [ ] 🟡 Validasi session sebelum scan dengan endpoint health/profile
-- [ ] 🟡 Auto-refresh token via configurable command atau HTTP refresh flow
+- [x] 🔴 Support session profile file berisi cookie, header, bearer token, dan base URL scope
+  - Profile mendukung TOML/JSON/YAML via `--session-profile` atau `TEMU_SESSION_PROFILE`.
+- [x] 🔴 Support env var untuk secrets/token agar tidak tersimpan di repo
+  - Nilai profile bisa memakai `env:NAME` atau `${NAME}`; override tersedia via `TEMU_SESSION_BEARER_TOKEN`, `TEMU_SESSION_COOKIE`, `TEMU_SESSION_BASE_URL`, dan `TEMU_SESSION_VALIDATE_URL`.
+- [x] 🟡 Validasi session sebelum scan dengan endpoint health/profile
+  - `validate_url` dipanggil sebelum scan dan harus mengembalikan status sukses.
+- [x] 🟡 Auto-refresh token via configurable command atau HTTP refresh flow
+  - `refresh_command` array dieksekusi tanpa shell dan stdout dipakai sebagai bearer token baru.
 
 ### 23.2 Authenticated Crawling
-- [ ] 🔴 Terapkan session profile ke discovery, browser crawler, fuzzing, vulnerability rules
-- [ ] 🟡 Deteksi logout/destructive links dan skip secara default
-- [ ] 🟡 CSRF token extraction untuk form scan read-only
-- [ ] 🟢 Multi-role scan profile untuk membandingkan akses user/admin
+- [x] 🔴 Terapkan session profile ke discovery, browser crawler, fuzzing, vulnerability rules
+  - Session headers diterapkan ke HTTP probe, browser/API discovery, fuzzing, fingerprint, vulnerability executor, security header checks, dan verifier.
+- [x] 🟡 Deteksi logout/destructive links dan skip secara default
+- [x] 🟡 CSRF token extraction untuk form scan read-only
+  - Hidden CSRF/token input di form dipertahankan sebagai query benign pada discovered form action tanpa submit form.
+- [x] 🟢 Multi-role scan profile untuk membandingkan akses user/admin
+  - Satu profile bisa mendefinisikan `roles.<name>` dan dipilih via `--session-role`; hasil scan antar role bisa dibandingkan dari report masing-masing.
 
 ### 🏁 Sprint 23 — Definition of Done
-- Temu bisa scan target authenticated tanpa menyimpan secret di source code
-- Session expiry dan logout accidental bisa ditangani
-- Report menjelaskan profile auth yang dipakai tanpa membocorkan secret
+- [x] Temu bisa scan target authenticated tanpa menyimpan secret di source code
+- [x] Session expiry dan logout accidental bisa ditangani
+- [x] Report menjelaskan profile auth yang dipakai tanpa membocorkan secret
 
 ---
 

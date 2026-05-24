@@ -185,6 +185,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         };
         let cpe = "cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*";
         let conn = init_database(&default_db_path(&config)).unwrap();

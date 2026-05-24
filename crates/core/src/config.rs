@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::TemuError;
+use crate::session::SessionProfile;
 
 /// Application-wide configuration loaded from a TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +48,9 @@ pub struct AppConfig {
     /// Optional path to a Chromium/Chrome-compatible browser binary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_crawl_browser_path: Option<PathBuf>,
+    /// Optional authenticated session profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_profile: Option<SessionProfile>,
 }
 
 fn default_max_recursion_depth() -> usize {
@@ -83,6 +87,7 @@ impl Default for AppConfig {
             browser_crawl_max_depth: default_browser_crawl_max_depth(),
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 }
@@ -113,7 +118,9 @@ impl AppConfig {
     /// `TEMU_MAX_RECURSION_DEPTH`, `TEMU_ALLOW_RISKY_RULES`,
     /// `TEMU_BROWSER_CRAWL_ENABLED`, `TEMU_BROWSER_CRAWL_MAX_PAGES`,
     /// `TEMU_BROWSER_CRAWL_MAX_DEPTH`, `TEMU_BROWSER_CRAWL_RENDER_JS`,
-    /// `TEMU_BROWSER_CRAWL_BROWSER_PATH`.
+    /// `TEMU_BROWSER_CRAWL_BROWSER_PATH`, `TEMU_SESSION_PROFILE`,
+    /// `TEMU_SESSION_BEARER_TOKEN`, `TEMU_SESSION_COOKIE`,
+    /// `TEMU_SESSION_BASE_URL`, `TEMU_SESSION_VALIDATE_URL`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
@@ -179,6 +186,51 @@ impl AppConfig {
         if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_BROWSER_PATH") {
             self.browser_crawl_browser_path = Some(PathBuf::from(v));
         }
+        if let Ok(v) = std::env::var("TEMU_SESSION_PROFILE") {
+            match SessionProfile::load(Path::new(&v)) {
+                Ok(profile) => self.session_profile = Some(profile),
+                Err(e) => tracing::warn!("Ignoring invalid TEMU_SESSION_PROFILE {v:?}: {e}"),
+            }
+        }
+        if let Some(profile) = &mut self.session_profile {
+            profile.apply_env_overrides();
+        } else if std::env::var("TEMU_SESSION_BEARER_TOKEN").is_ok()
+            || std::env::var("TEMU_SESSION_COOKIE").is_ok()
+            || std::env::var("TEMU_SESSION_BASE_URL").is_ok()
+            || std::env::var("TEMU_SESSION_VALIDATE_URL").is_ok()
+        {
+            let mut profile = SessionProfile::default();
+            profile.apply_env_overrides();
+            self.session_profile = Some(profile);
+        }
+    }
+
+    /// Loads and attaches a session profile from `path`.
+    pub fn with_session_profile(mut self, path: &Path) -> Result<Self, TemuError> {
+        let mut profile = SessionProfile::load(path)?;
+        profile.apply_env_overrides();
+        self.session_profile = Some(profile);
+        Ok(self)
+    }
+
+    /// Selects a named role from the current session profile.
+    pub fn select_session_role(&mut self, role: &str) -> Result<(), TemuError> {
+        let profile = self
+            .session_profile
+            .as_ref()
+            .ok_or_else(|| TemuError::Config("No session profile loaded".to_string()))?
+            .select_role(role)
+            .ok_or_else(|| TemuError::Config(format!("Session role not found: {role}")))?;
+        self.session_profile = Some(profile);
+        Ok(())
+    }
+
+    /// Returns authentication headers that should be applied to `url`.
+    pub fn session_headers_for_url(&self, url: &str) -> Vec<(String, String)> {
+        self.session_profile
+            .as_ref()
+            .map(|profile| profile.headers_for_url(url))
+            .unwrap_or_default()
     }
 
     /// Loads configuration from `path` and applies `TEMU_*` env var overrides.
@@ -221,6 +273,7 @@ mod tests {
         assert_eq!(config.browser_crawl_max_depth, 2);
         assert!(!config.browser_crawl_render_js);
         assert!(config.browser_crawl_browser_path.is_none());
+        assert!(config.session_profile.is_none());
     }
 
     #[test]
@@ -240,6 +293,9 @@ browser_crawl_max_pages = 10
 browser_crawl_max_depth = 1
 browser_crawl_render_js = true
 browser_crawl_browser_path = "/usr/bin/chromium"
+[session_profile]
+base_url_scope = "https://example.com"
+bearer_token = "inline-token"
 "#;
         let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         tmp.write_all(toml_content.as_bytes()).unwrap();
@@ -258,6 +314,13 @@ browser_crawl_browser_path = "/usr/bin/chromium"
         assert_eq!(
             config.browser_crawl_browser_path,
             Some(PathBuf::from("/usr/bin/chromium"))
+        );
+        assert_eq!(
+            config
+                .session_profile
+                .as_ref()
+                .and_then(|profile| profile.bearer_token.as_deref()),
+            Some("inline-token")
         );
     }
 
@@ -347,6 +410,29 @@ browser_crawl_browser_path = "/usr/bin/chromium"
         assert_eq!(
             config.browser_crawl_browser_path,
             Some(PathBuf::from("/opt/chrome"))
+        );
+    }
+
+    #[test]
+    fn test_apply_env_overrides_session_profile() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::set_var("TEMU_SESSION_BEARER_TOKEN", "env-token") };
+        unsafe { std::env::set_var("TEMU_SESSION_BASE_URL", "https://example.com") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_SESSION_BEARER_TOKEN") };
+        unsafe { std::env::remove_var("TEMU_SESSION_BASE_URL") };
+
+        let headers = config.session_headers_for_url("https://example.com/admin");
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| { name == "Authorization" && value == "Bearer env-token" })
+        );
+        assert!(
+            config
+                .session_headers_for_url("https://other.example/admin")
+                .is_empty()
         );
     }
 }

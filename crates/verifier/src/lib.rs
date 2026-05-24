@@ -52,7 +52,7 @@ pub async fn verify_reflection(vuln: &Vulnerability, config: &AppConfig) -> Veri
         }
     };
 
-    verify_reflection_with_client(vuln, &client).await
+    verify_reflection_with_client(vuln, config, &client).await
 }
 
 /// Verifies that a status-code based finding is still reproducible.
@@ -66,7 +66,7 @@ pub async fn verify_status_code(vuln: &Vulnerability, config: &AppConfig) -> Ver
         }
     };
 
-    verify_status_code_with_client(vuln, &client, &[]).await
+    verify_status_code_with_client(vuln, config, &client, &[]).await
 }
 
 /// Verifies that an expected response header is still present.
@@ -80,7 +80,7 @@ pub async fn verify_header(vuln: &Vulnerability, config: &AppConfig) -> VerifyRe
         }
     };
 
-    verify_header_with_client(vuln, &client, None, None).await
+    verify_header_with_client(vuln, config, &client, None, None).await
 }
 
 /// Runs verification for all vulnerabilities using rule metadata from `config.rules_dir`.
@@ -165,17 +165,18 @@ async fn verify_with_rule(
         }
         MatchType::BodyContains | MatchType::BodyRegex => {
             if vuln.parameter.is_some() {
-                verify_reflection_with_client(vuln, client).await
+                verify_reflection_with_client(vuln, config, client).await
             } else {
-                verify_body_with_client(vuln, client, rule).await
+                verify_body_with_client(vuln, config, client, rule).await
             }
         }
         MatchType::StatusCode => {
-            verify_status_code_with_client(vuln, client, &rule.verify.response_codes).await
+            verify_status_code_with_client(vuln, config, client, &rule.verify.response_codes).await
         }
         MatchType::HeaderContains => {
             verify_header_with_client(
                 vuln,
+                config,
                 client,
                 rule.verify.header_name.as_deref(),
                 rule.verify.header_contains.as_deref(),
@@ -199,12 +200,12 @@ async fn verify_time_based_with_client(
         let mut payload_times = Vec::new();
 
         for _ in 0..3 {
-            let Some(baseline) = timed_get(client, baseline_url).await else {
+            let Some(baseline) = timed_get(client, config, baseline_url).await else {
                 return VerifyResult::Inconclusive {
                     reason: "Baseline request failed".to_string(),
                 };
             };
-            let Some(payload) = timed_get(client, &payload_url).await else {
+            let Some(payload) = timed_get(client, config, &payload_url).await else {
                 return VerifyResult::Inconclusive {
                     reason: "Payload request failed".to_string(),
                 };
@@ -260,7 +261,11 @@ fn adjusted_sleep_payload_urls(vuln: &Vulnerability, threshold_secs: u64) -> Vec
         .collect()
 }
 
-async fn verify_reflection_with_client(vuln: &Vulnerability, client: &Client) -> VerifyResult {
+async fn verify_reflection_with_client(
+    vuln: &Vulnerability,
+    config: &AppConfig,
+    client: &Client,
+) -> VerifyResult {
     let marker = unique_marker();
     let verification_url = match url_with_marker(vuln, &marker) {
         Some(url) => url,
@@ -271,7 +276,11 @@ async fn verify_reflection_with_client(vuln: &Vulnerability, client: &Client) ->
         }
     };
 
-    let response = match client.get(verification_url.clone()).send().await {
+    let mut request = client.get(verification_url.clone());
+    for (name, value) in config.session_headers_for_url(&verification_url) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             return VerifyResult::Inconclusive {
@@ -298,10 +307,15 @@ async fn verify_reflection_with_client(vuln: &Vulnerability, client: &Client) ->
 
 async fn verify_body_with_client(
     vuln: &Vulnerability,
+    config: &AppConfig,
     client: &Client,
     rule: &Rule,
 ) -> VerifyResult {
-    let response = match client.get(&vuln.url).send().await {
+    let mut request = client.get(&vuln.url);
+    for (name, value) in config.session_headers_for_url(&vuln.url) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             return VerifyResult::Inconclusive {
@@ -346,10 +360,15 @@ async fn verify_body_with_client(
 
 async fn verify_status_code_with_client(
     vuln: &Vulnerability,
+    config: &AppConfig,
     client: &Client,
     expected_codes: &[u16],
 ) -> VerifyResult {
-    let response = match client.get(&vuln.url).send().await {
+    let mut request = client.get(&vuln.url);
+    for (name, value) in config.session_headers_for_url(&vuln.url) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             return VerifyResult::Inconclusive {
@@ -379,11 +398,16 @@ async fn verify_status_code_with_client(
 
 async fn verify_header_with_client(
     vuln: &Vulnerability,
+    config: &AppConfig,
     client: &Client,
     header_name: Option<&str>,
     header_contains: Option<&str>,
 ) -> VerifyResult {
-    let response = match client.get(&vuln.url).send().await {
+    let mut request = client.get(&vuln.url);
+    for (name, value) in config.session_headers_for_url(&vuln.url) {
+        request = request.header(name, value);
+    }
+    let response = match request.send().await {
         Ok(response) => response,
         Err(e) => {
             return VerifyResult::Inconclusive {
@@ -429,9 +453,13 @@ fn build_client(config: &AppConfig) -> Result<Client, TemuError> {
         .map_err(TemuError::from_network)
 }
 
-async fn timed_get(client: &Client, url: &str) -> Option<Duration> {
+async fn timed_get(client: &Client, config: &AppConfig, url: &str) -> Option<Duration> {
     let start = Instant::now();
-    client.get(url).send().await.ok()?;
+    let mut request = client.get(url);
+    for (name, value) in config.session_headers_for_url(url) {
+        request = request.header(name, value);
+    }
+    request.send().await.ok()?;
     Some(start.elapsed())
 }
 
@@ -596,6 +624,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 

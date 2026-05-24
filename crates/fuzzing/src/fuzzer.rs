@@ -24,6 +24,7 @@ async fn probe_path(
     limiter: &AdaptiveRateLimiter,
     base_url: &str,
     path: &str,
+    config: &AppConfig,
 ) -> Option<FuzzResult> {
     let normalized_path = normalize_path(path);
     let url = format!("{}{}", base_url.trim_end_matches('/'), normalized_path);
@@ -31,7 +32,7 @@ async fn probe_path(
 
     let parsed = Url::parse(&url).ok();
     let host = parsed.as_ref().and_then(Url::host_str);
-    let resp = send_get_with_resilience(client, limiter, &url, host).await?;
+    let resp = send_get_with_resilience(client, limiter, &url, host, config).await?;
 
     let status_code = resp.status().as_u16();
     let redirect_url = resp
@@ -69,10 +70,12 @@ async fn probe_url(
     client: &Client,
     limiter: &AdaptiveRateLimiter,
     url: Url,
+    config: &AppConfig,
 ) -> Option<(u16, u64, String)> {
     debug!("Parameter fuzzing {url}");
     let host = url.host_str().map(str::to_string);
-    let resp = send_get_with_resilience(client, limiter, url.as_str(), host.as_deref()).await?;
+    let resp =
+        send_get_with_resilience(client, limiter, url.as_str(), host.as_deref(), config).await?;
     let status_code = resp.status().as_u16();
     let (content_length, body) = read_limited_text(resp, MAX_PARAMETER_BODY_BYTES).await?;
     Some((status_code, content_length, body))
@@ -109,11 +112,16 @@ async fn send_get_with_resilience(
     limiter: &AdaptiveRateLimiter,
     url: &str,
     host: Option<&str>,
+    config: &AppConfig,
 ) -> Option<reqwest::Response> {
     for attempt in 0..=MAX_RETRIES {
         limiter.before_request(host).await;
         let started = Instant::now();
-        let result = client.get(url).send().await;
+        let mut request = client.get(url);
+        for (name, value) in config.session_headers_for_url(url) {
+            request = request.header(name, value);
+        }
+        let result = request.send().await;
         let elapsed = started.elapsed();
         limiter.finish_request();
 
@@ -180,7 +188,7 @@ pub async fn fuzz_paths(
     let limiter = AdaptiveRateLimiter::new(config.rate_limit);
 
     // Establish baseline (custom 404 detection)
-    let baseline = probe_path(&client, &limiter, base_url, BASELINE_PATH).await;
+    let baseline = probe_path(&client, &limiter, base_url, BASELINE_PATH, config).await;
     let (baseline_status, baseline_len) = match &baseline {
         Some(b) => (Some(b.status_code), Some(b.content_length)),
         None => (None, None),
@@ -199,10 +207,11 @@ pub async fn fuzz_paths(
         let limiter = Arc::clone(&limiter);
         let base = base_url.clone();
         let sem = Arc::clone(&semaphore);
+        let config = config.clone();
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok()?;
-            probe_path(&client, &limiter, &base, &path).await
+            probe_path(&client, &limiter, &base, &path, &config).await
         }));
     }
 
@@ -324,7 +333,7 @@ pub async fn fuzz_parameters(
     };
 
     let Some((baseline_status, baseline_len, _)) =
-        probe_url(&client, &limiter, base_url.clone()).await
+        probe_url(&client, &limiter, base_url.clone(), config).await
     else {
         return Vec::new();
     };
@@ -343,11 +352,12 @@ pub async fn fuzz_parameters(
         let client = Arc::clone(&client);
         let limiter = Arc::clone(&limiter);
         let sem = Arc::clone(&semaphore);
+        let config = config.clone();
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok()?;
             let (status_code, content_length, body) =
-                probe_url(&client, &limiter, probe.clone()).await?;
+                probe_url(&client, &limiter, probe.clone(), &config).await?;
             let status_changed = status_code != baseline_status;
             let len_diff = content_length.abs_diff(baseline_len);
             let length_changed = if baseline_len == 0 {
@@ -416,6 +426,7 @@ mod tests {
             browser_crawl_max_depth: 2,
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
+            session_profile: None,
         }
     }
 

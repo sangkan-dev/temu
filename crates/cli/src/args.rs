@@ -17,6 +17,7 @@ pub struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Run a vulnerability scan
     Scan {
@@ -92,6 +93,14 @@ pub enum ScanCommand {
         #[arg(long)]
         config: Option<std::path::PathBuf>,
 
+        /// Path to authenticated session profile (TOML/JSON/YAML).
+        #[arg(long)]
+        session_profile: Option<std::path::PathBuf>,
+
+        /// Named role from the session profile to use.
+        #[arg(long)]
+        session_role: Option<String>,
+
         /// Wordlist size preset for subdomain bruteforce
         #[arg(long, default_value = "small")]
         wordlist_size: WordlistSize,
@@ -134,6 +143,14 @@ pub enum ScanCommand {
         #[arg(long)]
         list: std::path::PathBuf,
 
+        /// Path to authenticated session profile (TOML/JSON/YAML).
+        #[arg(long)]
+        session_profile: Option<std::path::PathBuf>,
+
+        /// Named role from the session profile to use.
+        #[arg(long)]
+        session_role: Option<String>,
+
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
         allow_risky_rules: bool,
@@ -147,6 +164,14 @@ pub enum ScanCommand {
         /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
         #[arg(long)]
         ports: Option<String>,
+
+        /// Path to authenticated session profile (TOML/JSON/YAML).
+        #[arg(long)]
+        session_profile: Option<std::path::PathBuf>,
+
+        /// Named role from the session profile to use.
+        #[arg(long)]
+        session_role: Option<String>,
 
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
@@ -258,6 +283,10 @@ mod tests {
             "15",
             "--output",
             "/tmp/results",
+            "--session-profile",
+            "/tmp/session.toml",
+            "--session-role",
+            "admin",
             "--no-browser-crawl",
             "--crawl-max-pages",
             "9",
@@ -280,6 +309,8 @@ mod tests {
                         rate,
                         timeout,
                         output,
+                        session_profile,
+                        session_role,
                         ports,
                         no_browser_crawl,
                         crawl_max_pages,
@@ -294,6 +325,11 @@ mod tests {
                 assert_eq!(rate, Some(30));
                 assert_eq!(timeout, Some(15));
                 assert_eq!(output, Some(std::path::PathBuf::from("/tmp/results")));
+                assert_eq!(
+                    session_profile,
+                    Some(std::path::PathBuf::from("/tmp/session.toml"))
+                );
+                assert_eq!(session_role.as_deref(), Some("admin"));
                 assert_eq!(ports, Some("80,443,8080".to_string()));
                 assert!(no_browser_crawl);
                 assert_eq!(crawl_max_pages, Some(9));
