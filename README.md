@@ -95,6 +95,19 @@ cargo run -p cli -- scan single \
   --verbose
 ```
 
+For an authorized local audit, emit an additional unredacted evidence artifact:
+
+```bash
+cargo run -p cli -- scan single \
+  --url https://target.example.com \
+  --output ./results \
+  --include-sensitive-evidence
+```
+
+The resulting `*_audit.json` can contain raw secrets or PII and is created with
+owner-only permissions on Unix. Keep it local; the normal JSON, HTML, PDF,
+SARIF, and Markdown artifacts remain redacted/shareable.
+
 Scan from a file:
 
 ```bash
@@ -228,14 +241,17 @@ numeric identifier mutation, verbose framework errors, and secrets/PII-like data
 in HTML, JavaScript, or source-map responses.
 
 Stateful probes stay same-origin, cap replay volume, reuse the configured session
-headers, and avoid POST/write/delete requests. Report evidence is redacted before
-JSON, HTML, and PDF output are written.
+headers, and avoid POST/write/delete requests. Shareable report evidence is
+redacted before JSON, HTML, and PDF output are written. Use
+`--include-sensitive-evidence` only when an authorized auditor needs the
+additional local `*_audit.json` artifact with exact PoC evidence.
 
 ## Reports
 
 Each completed scan writes:
 
-- JSON: machine-readable source of truth.
+- JSON: redacted machine-readable report suitable for sharing.
+- Audit JSON (`--include-sensitive-evidence` only): local raw-evidence source for PoC validation; do not share or upload.
 - HTML: analyst-friendly report with summary, target table, asset graph priorities, findings, OAST callback timeline, assets, and tech stack.
 - PDF: executive report with cover page, risk overview, vulnerability detail, and recommendations.
 - Asset graph JSON: relationship graph with deduplicated findings, attack path hints, and top remediation actions.

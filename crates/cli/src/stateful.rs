@@ -380,7 +380,7 @@ fn inspect_data_exposure(snapshot: &ResponseSnapshot) -> Vec<Vulnerability> {
             "Remove secrets from client-delivered content and rotate exposed credentials.",
         ));
     }
-    if let Some(evidence) = first_redacted_match(EMAIL_RE.as_ref(), &snapshot.body)
+    if let Some(evidence) = first_evidence_match(EMAIL_RE.as_ref(), &snapshot.body)
         .or_else(|| first_valid_card_match(&snapshot.body))
     {
         findings.push(vulnerability(
@@ -388,12 +388,12 @@ fn inspect_data_exposure(snapshot: &ResponseSnapshot) -> Vec<Vulnerability> {
             "PII-like data exposed in response",
             Severity::Medium,
             5.3,
-            format!("PII-like pattern found with redacted evidence: {evidence}"),
+            format!("PII-like pattern found in response body: {evidence}"),
             &snapshot.url,
             "Reduce exposed personal data, require authorization, and mask sensitive fields.",
         ));
     }
-    if let Some(evidence) = first_redacted_match(STACK_TRACE_RE.as_ref(), &snapshot.body) {
+    if let Some(evidence) = first_evidence_match(STACK_TRACE_RE.as_ref(), &snapshot.body) {
         findings.push(vulnerability(
             "STATEFUL-VERBOSE-ERROR",
             "Verbose stack trace or framework debug response",
@@ -407,11 +407,11 @@ fn inspect_data_exposure(snapshot: &ResponseSnapshot) -> Vec<Vulnerability> {
     findings
 }
 
-fn first_redacted_match(regex: Option<&Regex>, body: &str) -> Option<String> {
+fn first_evidence_match(regex: Option<&Regex>, body: &str) -> Option<String> {
     let regex = regex?;
     regex
         .find(body)
-        .map(|m| redact_evidence(m.as_str()).chars().take(160).collect())
+        .map(|m| m.as_str().chars().take(160).collect())
 }
 
 fn first_secret_match(body: &str) -> Option<String> {
@@ -431,7 +431,7 @@ fn first_secret_match(body: &str) -> Option<String> {
                     || normalized.ends_with(&format!(":'{value}'"))
                     || normalized.ends_with(&format!("='{value}'"))
             });
-        (!is_placeholder).then(|| redact_evidence(candidate.as_str()))
+        (!is_placeholder).then(|| candidate.as_str().chars().take(160).collect())
     })
 }
 
@@ -444,7 +444,7 @@ fn first_valid_card_match(body: &str) -> Option<String> {
             .filter(char::is_ascii_digit)
             .collect::<String>();
         if luhn_valid(&digits) && has_payment_context(body, candidate.start(), candidate.end()) {
-            Some(redact_evidence(candidate.as_str()))
+            Some(candidate.as_str().chars().take(160).collect())
         } else {
             None
         }
@@ -489,28 +489,6 @@ fn luhn_valid(digits: &str) -> bool {
         sum += value;
     }
     sum.is_multiple_of(10)
-}
-
-fn redact_evidence(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.contains('@') {
-        let mut parts = trimmed.split('@');
-        let domain = parts.nth(1).unwrap_or("redacted");
-        return format!("[REDACTED]@{domain}");
-    }
-    if trimmed.len() <= 8 {
-        return "[REDACTED]".to_string();
-    }
-    let prefix: String = trimmed.chars().take(4).collect();
-    let suffix: String = trimmed
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("{prefix}[REDACTED]{suffix}")
 }
 
 fn is_sensitive_endpoint(url: &str) -> bool {
@@ -834,18 +812,6 @@ mod tests {
     }
 
     #[test]
-    fn test_redact_evidence_masks_sensitive_values() {
-        assert_eq!(
-            redact_evidence("alice@example.com"),
-            "[REDACTED]@example.com"
-        );
-        assert_eq!(
-            redact_evidence("DB_PASSWORD=supersecret"),
-            "DB_P[REDACTED]cret"
-        );
-    }
-
-    #[test]
     fn test_card_detection_requires_luhn_valid_candidate() {
         assert!(first_valid_card_match("render size 666666666668 pixels").is_none());
         assert!(first_valid_card_match("record=4111 1111 1111 1111").is_none());
@@ -878,8 +844,7 @@ mod tests {
             .find(|finding| finding.id == "STATEFUL-SECRET-EXPOSURE")
             .expect("hardcoded value should be reported");
 
-        assert!(finding.proof.contains("Pass[REDACTED]ing\""));
-        assert!(!finding.proof.contains("ord\""));
+        assert!(finding.proof.contains("Password=\"IamUsedForTesting\""));
     }
 
     #[test]
@@ -897,7 +862,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stateful_scan_detects_form_reflection_and_secret_redacted() {
+    async fn test_stateful_scan_retains_secret_for_audit_reporter() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/"))
@@ -939,8 +904,7 @@ mod tests {
             .iter()
             .find(|finding| finding.id == "STATEFUL-SECRET-EXPOSURE")
             .expect("secret exposure should be reported");
-        assert!(secret.proof.contains("[REDACTED]"));
-        assert!(!secret.proof.contains("secret-value-12345"));
+        assert!(secret.proof.contains("secret-value-12345"));
     }
 
     #[tokio::test]

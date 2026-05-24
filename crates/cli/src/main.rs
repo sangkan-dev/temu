@@ -18,9 +18,9 @@ use clap::Parser;
 use cli::rules_update;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
 use reporter::{
-    ScanResult, compare_reports, generate_diff_json, generate_graph_cache, generate_graph_json,
-    generate_html, generate_json, generate_markdown, generate_pdf, generate_sarif,
-    generate_trend_json, load_suppressions, record_scan_history,
+    ScanResult, compare_reports, generate_audit_json, generate_diff_json, generate_graph_cache,
+    generate_graph_json, generate_html, generate_json, generate_markdown, generate_pdf,
+    generate_sarif, generate_trend_json, load_suppressions, record_scan_history,
 };
 use temu_core::init_logging;
 
@@ -39,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
                 rate,
                 timeout,
                 output,
+                include_sensitive_evidence,
                 config: config_path,
                 session_profile,
                 session_role,
@@ -152,10 +153,18 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                print_report_paths(&write_report_set(&result, &output_dir)?);
+                if include_sensitive_evidence {
+                    warn_sensitive_evidence_output();
+                }
+                print_report_paths(&write_report_set(
+                    &result,
+                    &output_dir,
+                    include_sensitive_evidence,
+                )?);
             }
             ScanCommand::File {
                 list,
+                include_sensitive_evidence,
                 session_profile,
                 session_role,
                 allow_risky_rules,
@@ -200,11 +209,19 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await
                 .with_context(|| "File list scan failed")?;
-                write_multi_target_reports(&result, &config.output_dir)?;
+                if include_sensitive_evidence {
+                    warn_sensitive_evidence_output();
+                }
+                write_multi_target_reports(
+                    &result,
+                    &config.output_dir,
+                    include_sensitive_evidence,
+                )?;
             }
             ScanCommand::Network {
                 cidr,
                 ports,
+                include_sensitive_evidence,
                 session_profile,
                 session_role,
                 allow_risky_rules,
@@ -248,7 +265,14 @@ async fn main() -> anyhow::Result<()> {
                 let result = orchestrator::run_network_scan_multi(&cidr, &config, &selected_ports)
                     .await
                     .with_context(|| "Network scan failed")?;
-                write_multi_target_reports(&result, &config.output_dir)?;
+                if include_sensitive_evidence {
+                    warn_sensitive_evidence_output();
+                }
+                write_multi_target_reports(
+                    &result,
+                    &config.output_dir,
+                    include_sensitive_evidence,
+                )?;
             }
         },
 
@@ -271,7 +295,7 @@ async fn main() -> anyhow::Result<()> {
                 .with_context(|| "Distributed coordinator failed")?;
             let default_config_path = std::path::PathBuf::from("config/default.toml");
             let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
-            write_multi_target_reports(&result, &config.output_dir)?;
+            write_multi_target_reports(&result, &config.output_dir, false)?;
         }
 
         Command::Report { mode: report_cmd } => {
@@ -537,17 +561,27 @@ async fn simulate_rules(
 fn write_multi_target_reports(
     result: &orchestrator::MultiTargetScanResult,
     output_dir: &std::path::Path,
+    include_sensitive_evidence: bool,
 ) -> anyhow::Result<()> {
     for target in &result.targets {
-        print_report_paths(&write_report_set(target, output_dir)?);
+        print_report_paths(&write_report_set(
+            target,
+            output_dir,
+            include_sensitive_evidence,
+        )?);
     }
-    print_report_paths(&write_report_set(&result.aggregate, output_dir)?);
+    print_report_paths(&write_report_set(
+        &result.aggregate,
+        output_dir,
+        include_sensitive_evidence,
+    )?);
     Ok(())
 }
 
 fn write_report_set(
     result: &ScanResult,
     output_dir: &std::path::Path,
+    include_sensitive_evidence: bool,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let _history_path = record_scan_history(result, output_dir)
         .with_context(|| "Failed to update scan history cache")?;
@@ -567,7 +601,7 @@ fn write_report_set(
         .with_context(|| "Failed to write Markdown summary")?;
     let _cache_path = generate_graph_cache(result, output_dir)
         .with_context(|| "Failed to write asset graph cache")?;
-    Ok(vec![
+    let mut paths = vec![
         json_path,
         html_path,
         pdf_path,
@@ -575,13 +609,26 @@ fn write_report_set(
         trend_path,
         sarif_path,
         markdown_path,
-    ])
+    ];
+    if include_sensitive_evidence {
+        paths.push(
+            generate_audit_json(result, output_dir)
+                .with_context(|| "Failed to write sensitive audit JSON report")?,
+        );
+    }
+    Ok(paths)
 }
 
 fn print_report_paths(paths: &[std::path::PathBuf]) {
     for path in paths {
         println!("{}", path.display());
     }
+}
+
+fn warn_sensitive_evidence_output() {
+    eprintln!(
+        "[!] Sensitive evidence enabled: *_audit.json contains raw secrets or PII. Store locally and do not share as a normal report."
+    );
 }
 
 fn read_scan_result(path: &std::path::Path) -> anyhow::Result<ScanResult> {
@@ -627,7 +674,14 @@ async fn run_scheduled_profile(profile: &TargetProfile) -> anyhow::Result<()> {
     let result =
         orchestrator::run_scan_with_ports(&profile.url, &config, DiscoveryMode::Hybrid, &ports)
             .await?;
-    print_report_paths(&write_report_set(&result, &output_dir)?);
+    if profile.include_sensitive_evidence {
+        warn_sensitive_evidence_output();
+    }
+    print_report_paths(&write_report_set(
+        &result,
+        &output_dir,
+        profile.include_sensitive_evidence,
+    )?);
     if let Some(webhook_url) = &profile.webhook_url {
         post_scan_webhook(webhook_url, &result).await?;
     }

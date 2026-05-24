@@ -19,6 +19,27 @@ profile, rules repository refresh, output directory, webhook, and the
 `fail_on_severity` exit policy. With `--once`, a matching severity causes a
 non-zero exit code suitable for CI or cron alerting.
 
+## Local Audit Evidence
+
+Normal JSON, HTML, PDF, SARIF, and Markdown reports keep sensitive evidence
+redacted so they can be shared in engineering workflows. For an authorized
+local investigation that needs exact PoC values:
+
+```bash
+temu scan single \
+  --url https://target.example.com \
+  --include-sensitive-evidence
+```
+
+This writes an additional `*_audit.json` artifact with unredacted secret or PII
+evidence. On Unix it is written with permission mode `0600`. Treat this file as
+sensitive local data and do not attach it to tickets, CI artifacts, webhook
+payloads, or public reports. Scheduled profiles can opt in explicitly with:
+
+```toml
+include_sensitive_evidence = true
+```
+
 ## Baseline Diff And Suppression
 
 Compare two scan JSON artifacts:

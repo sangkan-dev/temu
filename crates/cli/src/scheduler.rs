@@ -27,6 +27,8 @@ pub struct TargetProfile {
     #[serde(default)]
     pub allow_risky_rules: bool,
     #[serde(default)]
+    pub include_sensitive_evidence: bool,
+    #[serde(default)]
     pub fail_on_severity: Option<Severity>,
     #[serde(default)]
     pub webhook_url: Option<String>,
@@ -88,6 +90,7 @@ mod tests {
             session_profile: None,
             rules_repo_url: None,
             allow_risky_rules: false,
+            include_sensitive_evidence: false,
             fail_on_severity: Some(Severity::High),
             webhook_url: None,
         };

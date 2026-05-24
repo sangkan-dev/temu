@@ -45,12 +45,63 @@ pub fn generate_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, 
     Ok(path)
 }
 
+/// Writes a local audit JSON artifact that preserves sensitive finding evidence.
+///
+/// This output is intended only for authorized local audit workflows and must
+/// not be attached to tickets, CI artifacts, or external integrations.
+pub fn generate_audit_json(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, TemuError> {
+    std::fs::create_dir_all(output_dir).map_err(|e| {
+        TemuError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Failed to create output directory {:?}: {e}", output_dir),
+        ))
+    })?;
+
+    let date = result.scan_started_at.format("%Y-%m-%d").to_string();
+    let sanitized = sanitize_target(&result.target);
+    let path = output_dir.join(format!("{date}_{sanitized}_audit.json"));
+    let json = serde_json::to_string_pretty(result)
+        .map_err(|e| TemuError::Parse(format!("Failed to serialize audit ScanResult: {e}")))?;
+    std::fs::write(&path, json).map_err(|e| {
+        TemuError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Failed to write {:?}: {e}", path),
+        ))
+    })?;
+    set_audit_permissions(&path)?;
+    info!("Sensitive audit report written to {:?}", path);
+    Ok(path)
+}
+
+fn sanitize_target(target: &str) -> String {
+    target
+        .replace("https://", "")
+        .replace("http://", "")
+        .replace(['/', ':', '.'], "_")
+        .trim_matches('_')
+        .to_string()
+}
+
+#[cfg(unix)]
+fn set_audit_permissions(path: &Path) -> Result<(), TemuError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = std::fs::Permissions::from_mode(0o600);
+    std::fs::set_permissions(path, permissions).map_err(TemuError::Io)
+}
+
+#[cfg(not(unix))]
+fn set_audit_permissions(_path: &Path) -> Result<(), TemuError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{ScanResult, ScanStats};
     use chrono::Utc;
     use std::collections::HashMap;
+    use temu_core::{Severity, Vulnerability};
 
     fn make_result(target: &str) -> ScanResult {
         ScanResult {
@@ -123,5 +174,43 @@ mod tests {
 
         assert!(!name.contains("://"), "Filename should not contain ://");
         assert!(!name.contains('/'), "Filename should not contain /");
+    }
+
+    #[test]
+    fn test_audit_json_preserves_raw_evidence_while_standard_json_redacts_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut result = make_result("https://example.com");
+        result.vulnerabilities.push(Vulnerability::new(
+            "STATEFUL-SECRET-EXPOSURE",
+            "Hardcoded secret",
+            Severity::High,
+            8.0,
+            r#"Password="IamUsedForTesting""#,
+            "https://example.com/main.js",
+        ));
+
+        let shared_path = generate_json(&result, tmp.path()).unwrap();
+        let audit_path = generate_audit_json(&result, tmp.path()).unwrap();
+        let shared = std::fs::read_to_string(shared_path).unwrap();
+        let audit = std::fs::read_to_string(&audit_path).unwrap();
+
+        assert!(!shared.contains("IamUsedForTesting"));
+        assert!(shared.contains(r#"Password=\"<REDACTED>\""#));
+        assert!(audit.contains("IamUsedForTesting"));
+        assert!(
+            audit_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("_audit")
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&audit_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
     }
 }

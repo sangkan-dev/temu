@@ -14,6 +14,6 @@ pub use enterprise::{
 };
 pub use graph::{generate_graph_cache, generate_graph_json};
 pub use html::generate_html;
-pub use json::generate_json;
+pub use json::{generate_audit_json, generate_json};
 pub use pdf::generate_pdf;
 pub use types::{ScanResult, ScanStats};

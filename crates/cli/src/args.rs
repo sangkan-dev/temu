@@ -109,6 +109,10 @@ pub enum ScanCommand {
         #[arg(long)]
         output: Option<std::path::PathBuf>,
 
+        /// Write a local audit JSON artifact containing unredacted sensitive evidence.
+        #[arg(long)]
+        include_sensitive_evidence: bool,
+
         /// Path to config file
         #[arg(long)]
         config: Option<std::path::PathBuf>,
@@ -179,6 +183,10 @@ pub enum ScanCommand {
         #[arg(long)]
         list: std::path::PathBuf,
 
+        /// Write local audit JSON artifacts containing unredacted sensitive evidence.
+        #[arg(long)]
+        include_sensitive_evidence: bool,
+
         /// Path to authenticated session profile (TOML/JSON/YAML).
         #[arg(long)]
         session_profile: Option<std::path::PathBuf>,
@@ -216,6 +224,10 @@ pub enum ScanCommand {
         /// TCP ports to scan, e.g. 80,443,8080 or 1-1024
         #[arg(long)]
         ports: Option<String>,
+
+        /// Write local audit JSON artifacts containing unredacted sensitive evidence.
+        #[arg(long)]
+        include_sensitive_evidence: bool,
 
         /// Path to authenticated session profile (TOML/JSON/YAML).
         #[arg(long)]
@@ -451,6 +463,7 @@ mod tests {
             "15",
             "--output",
             "/tmp/results",
+            "--include-sensitive-evidence",
             "--session-profile",
             "/tmp/session.toml",
             "--session-role",
@@ -477,6 +490,7 @@ mod tests {
                         rate,
                         timeout,
                         output,
+                        include_sensitive_evidence,
                         session_profile,
                         session_role,
                         ports,
@@ -493,6 +507,7 @@ mod tests {
                 assert_eq!(rate, Some(30));
                 assert_eq!(timeout, Some(15));
                 assert_eq!(output, Some(std::path::PathBuf::from("/tmp/results")));
+                assert!(include_sensitive_evidence);
                 assert_eq!(
                     session_profile,
                     Some(std::path::PathBuf::from("/tmp/session.toml"))
@@ -547,6 +562,30 @@ mod tests {
                 assert!(allow_risky_rules);
             }
             _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_scan_file_sensitive_evidence_flag_parses() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "file",
+            "--list",
+            "/tmp/targets.txt",
+            "--include-sensitive-evidence",
+        ])
+        .expect("sensitive evidence flag must parse");
+
+        match cli.command {
+            Command::Scan {
+                mode:
+                    ScanCommand::File {
+                        include_sensitive_evidence,
+                        ..
+                    },
+            } => assert!(include_sensitive_evidence),
+            _ => panic!("expected Scan::File"),
         }
     }
 

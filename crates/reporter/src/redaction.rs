@@ -4,11 +4,14 @@ use regex::Regex;
 
 use crate::types::ScanResult;
 
-static SECRET_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+static SECRET_ASSIGNMENT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(
-        r#"(?is)(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|secret|token|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{8,})"#,
+        r#"(?is)((?:api[_-]?key|apikey|secret|token|password)\s*[:=]\s*["']?)([A-Za-z0-9_./+=-]{8,})(["']?)"#,
     )
     .ok()
+});
+static DIRECT_SECRET_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(r#"(?s)(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"#).ok()
 });
 static EMAIL_RE: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r#"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#).ok());
@@ -27,8 +30,25 @@ pub fn redact_scan_result(result: &ScanResult) -> ScanResult {
 /// Redacts common secrets and PII-like values in report evidence.
 pub fn redact_sensitive_text(value: &str) -> String {
     let mut redacted = value.to_string();
+    if let Some(regex) = SECRET_ASSIGNMENT_RE.as_ref() {
+        redacted = regex
+            .replace_all(&redacted, |captures: &regex::Captures<'_>| {
+                format!(
+                    "{}<REDACTED>{}",
+                    captures
+                        .get(1)
+                        .map(|part| part.as_str())
+                        .unwrap_or_default(),
+                    captures
+                        .get(3)
+                        .map(|part| part.as_str())
+                        .unwrap_or_default()
+                )
+            })
+            .to_string();
+    }
     for regex in [
-        SECRET_RE.as_ref(),
+        DIRECT_SECRET_RE.as_ref(),
         EMAIL_RE.as_ref(),
         CREDIT_CARD_RE.as_ref(),
     ]
@@ -77,7 +97,7 @@ mod tests {
     fn test_redact_sensitive_text_masks_secret_and_email() {
         let value = "token=secret-token-123 alice@example.com";
         let redacted = redact_sensitive_text(value);
-        assert!(redacted.contains("[REDACTED]"));
+        assert!(redacted.contains("token=<REDACTED>"));
         assert!(!redacted.contains("secret-token-123"));
         assert!(!redacted.contains("alice@example.com"));
     }
@@ -113,6 +133,11 @@ mod tests {
             !redacted.vulnerabilities[0]
                 .proof
                 .contains("supersecret12345")
+        );
+        assert!(
+            redacted.vulnerabilities[0]
+                .proof
+                .contains("api_key=<REDACTED>")
         );
     }
 }

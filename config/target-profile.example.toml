@@ -7,6 +7,7 @@ timeout_secs = 10
 ports = "3000"
 output_dir = "./results"
 allow_risky_rules = false
+include_sensitive_evidence = false
 fail_on_severity = "high"
 
 # Optional authenticated and integration settings:

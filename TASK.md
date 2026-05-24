@@ -1390,7 +1390,9 @@ bukan memasukkannya otomatis ke manifest aktif.
 melakukan GET/read-only same-origin dengan budget request terbatas. Modul ini mendeteksi form +
 CSRF, reflected GET input, admin/debug endpoint, mutasi numeric ID terbatas, differential role
 signal saat session profile memiliki beberapa role, serta secrets/PII/stack trace dengan evidence
-yang sudah direduksi. Reporter JSON/HTML/PDF juga meredaksi proof sebelum ditulis.
+mentah yang tetap tersedia secara internal. Reporter JSON/HTML/PDF meredaksi proof sebelum
+ditulis; opsi eksplisit `--include-sensitive-evidence` menulis `*_audit.json` lokal untuk
+validasi PoC dengan permission owner-only pada Unix.
 
 ---
 
@@ -1523,6 +1525,8 @@ session, rules repo refresh, output directory, webhook, dan failure threshold se
 `reporter::enterprise` menyediakan `temu report diff` dengan suppression beralasan dan expiry,
 history SQLite + artifact trend yang tampil di HTML, serta export SARIF dan Markdown. Report set
 normal kini menghasilkan JSON/HTML/PDF, asset graph, trend, SARIF, dan remediation Markdown.
+Artifact shareable tetap ter-redact; operator dapat mengaktifkan audit JSON lokal berisi
+evidence mentah melalui flag atau target profile eksplisit.
 
 ---
 
