@@ -1,0 +1,18 @@
+id: "OAST-LOG-INJECTION-CALLBACK"
+name: "OAST log injection callback canary"
+tech_stack: []
+severity: medium
+cvss: 5.0
+payload: "Temu-OAST {{callback_url}}"
+risk_level: intrusive
+requires_confirmation: true
+injection_points: [Header]
+injection_name: "User-Agent"
+request_method: GET
+verify:
+  match_type: StatusCode
+  response_codes: [599]
+cve_id: null
+remediation: "Sanitize log inputs and avoid rendering raw logs in admin or monitoring views."
+references:
+  - "https://owasp.org/www-community/attacks/Log_Injection"

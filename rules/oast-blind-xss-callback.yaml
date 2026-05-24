@@ -1,0 +1,18 @@
+id: "OAST-BLIND-XSS-CALLBACK"
+name: "OAST blind XSS callback canary"
+tech_stack: []
+severity: medium
+cvss: 5.4
+payload: "<script src=\"{{callback_url}}/x.js\"></script>"
+risk_level: intrusive
+requires_confirmation: true
+injection_points: [QueryParam]
+injection_name: "q"
+request_method: GET
+verify:
+  match_type: StatusCode
+  response_codes: [599]
+cve_id: null
+remediation: "Encode stored user-controlled content and apply a restrictive Content-Security-Policy."
+references:
+  - "https://owasp.org/www-community/attacks/xss/"

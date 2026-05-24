@@ -1,0 +1,29 @@
+{% if callback_events | length > 0 %}
+<section>
+  <h2>OAST Callback Timeline</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Received</th>
+        <th>Correlation ID</th>
+        <th>Protocol</th>
+        <th>Request</th>
+        <th>Remote</th>
+        <th>User Agent</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in callback_events %}
+      <tr>
+        <td>{{ event.received_at }}</td>
+        <td>{{ event.correlation_id }}</td>
+        <td>{{ event.protocol }}</td>
+        <td>{{ event.method }} {{ event.path }}</td>
+        <td>{{ event.remote_addr }}</td>
+        <td>{{ event.user_agent }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

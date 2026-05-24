@@ -226,6 +226,10 @@ mod tests {
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
             session_profile: None,
+            oast_callback_url: None,
+            oast_correlation_id: None,
+            oast_database_path: None,
+            oast_wait_secs: 0,
         };
         let cpe = "cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*";
         let conn = init_database(&default_db_path(&config)).unwrap();

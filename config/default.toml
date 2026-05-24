@@ -11,6 +11,13 @@ browser_crawl_enabled = true
 browser_crawl_max_pages = 25
 browser_crawl_max_depth = 2
 browser_crawl_render_js = false
+oast_wait_secs = 0
+
+# Optional OAST/collaborator settings. OAST probes are disabled unless a scan
+# supplies a callback URL and risky rules are explicitly enabled.
+# oast_callback_url = "https://callback.example/{{callback_id}}"
+# oast_correlation_id = "manual-correlation-id"
+# oast_database_path = "./results/.cache/callbacks.sqlite"
 
 # Optional authenticated scanning profile. Prefer --session-profile or
 # TEMU_SESSION_PROFILE for secrets instead of storing tokens here.

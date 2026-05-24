@@ -1,0 +1,18 @@
+id: "OAST-SSRF-CALLBACK"
+name: "OAST SSRF callback probe"
+tech_stack: []
+severity: medium
+cvss: 5.3
+payload: "{{callback_url}}"
+risk_level: intrusive
+requires_confirmation: true
+injection_points: [QueryParam]
+injection_name: "url"
+request_method: GET
+verify:
+  match_type: StatusCode
+  response_codes: [599]
+cve_id: null
+remediation: "Validate and restrict server-side URL fetching. Block internal networks and require allowlisted destinations."
+references:
+  - "https://owasp.org/www-community/attacks/Server_Side_Request_Forgery"

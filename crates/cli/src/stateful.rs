@@ -714,6 +714,10 @@ mod tests {
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
             session_profile: None,
+            oast_callback_url: None,
+            oast_correlation_id: None,
+            oast_database_path: None,
+            oast_wait_secs: 0,
         }
     }
 

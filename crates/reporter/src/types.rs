@@ -19,9 +19,24 @@ pub struct ScanResult {
     /// Per-target summaries for aggregate multi-target reports.
     #[serde(default)]
     pub target_summaries: Vec<TargetSummary>,
+    /// OAST/collaborator callback events associated with this scan.
+    #[serde(default)]
+    pub callback_events: Vec<CallbackEvent>,
     pub scan_started_at: DateTime<Utc>,
     pub scan_finished_at: DateTime<Utc>,
     pub stats: ScanStats,
+}
+
+/// One callback event captured by `temu collaborator serve`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallbackEvent {
+    pub correlation_id: String,
+    pub protocol: String,
+    pub method: String,
+    pub path: String,
+    pub remote_addr: String,
+    pub user_agent: Option<String>,
+    pub received_at: DateTime<Utc>,
 }
 
 /// Summary for one target inside a multi-target aggregate report.

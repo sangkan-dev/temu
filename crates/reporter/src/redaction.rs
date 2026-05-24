@@ -97,6 +97,7 @@ mod tests {
                 "https://example.com",
             )],
             target_summaries: vec![],
+            callback_events: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: ScanStats {

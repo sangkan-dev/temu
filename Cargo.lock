@@ -306,6 +306,7 @@ dependencies = [
  "regex",
  "reporter",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

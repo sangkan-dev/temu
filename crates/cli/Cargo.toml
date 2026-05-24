@@ -34,6 +34,7 @@ hickory-resolver = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures-util = { workspace = true }
 regex = { workspace = true }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

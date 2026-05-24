@@ -68,6 +68,10 @@ fn build_templates() -> Result<Tera, TemuError> {
             include_str!("../../../templates/partials/tech_stack.html"),
         ),
         (
+            "partials/callback_events.html",
+            include_str!("../../../templates/partials/callback_events.html"),
+        ),
+        (
             "partials/footer.html",
             include_str!("../../../templates/partials/footer.html"),
         ),
@@ -99,6 +103,7 @@ struct ReportView {
     vulnerabilities: Vec<VulnerabilityView>,
     assets: Vec<Asset>,
     tech_groups: Vec<TechGroupView>,
+    callback_events: Vec<CallbackEventView>,
 }
 
 impl ReportView {
@@ -134,6 +139,36 @@ impl ReportView {
             vulnerabilities,
             assets: result.assets.clone(),
             tech_groups: tech_groups(result),
+            callback_events: result
+                .callback_events
+                .iter()
+                .map(CallbackEventView::from_event)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct CallbackEventView {
+    correlation_id: String,
+    protocol: String,
+    method: String,
+    path: String,
+    remote_addr: String,
+    user_agent: String,
+    received_at: String,
+}
+
+impl CallbackEventView {
+    fn from_event(event: &crate::types::CallbackEvent) -> Self {
+        Self {
+            correlation_id: event.correlation_id.clone(),
+            protocol: event.protocol.clone(),
+            method: event.method.clone(),
+            path: event.path.clone(),
+            remote_addr: event.remote_addr.clone(),
+            user_agent: event.user_agent.clone().unwrap_or_else(|| "-".to_string()),
+            received_at: event.received_at.to_rfc3339(),
         }
     }
 }
@@ -318,6 +353,7 @@ mod tests {
                 "https://example.com/.env",
             )],
             target_summaries: vec![],
+            callback_events: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: crate::types::ScanStats {

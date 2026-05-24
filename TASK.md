@@ -1399,22 +1399,30 @@ yang sudah direduksi. Reporter JSON/HTML/PDF juga meredaksi proof sebelum dituli
 **Goal:** Support deteksi blind vulnerability seperti SSRF, XXE, blind XSS, dan Log4Shell-style callback dengan infrastruktur callback milik user.
 
 ### 27.1 Callback Server
-- [ ] 🔴 Tambahkan mode `temu collaborator serve` untuk HTTP callback lokal
-- [ ] 🟡 Tambahkan DNS callback mode jika domain user tersedia
-- [ ] 🟡 Correlation ID per payload dan per target
-- [ ] 🟡 Storage SQLite untuk callback evidence
+- [x] 🔴 Tambahkan mode `temu collaborator serve` untuk HTTP callback lokal
+- [x] 🟡 Tambahkan DNS callback mode jika domain user tersedia
+- [x] 🟡 Correlation ID per payload dan per target
+- [x] 🟡 Storage SQLite untuk callback evidence
 
 ### 27.2 OAST-Aware Rules
-- [ ] 🔴 Rule schema support callback placeholder seperti `{{callback_url}}`
-- [ ] 🟡 SSRF callback probe opt-in
-- [ ] 🟡 XXE callback probe opt-in
-- [ ] 🟡 Blind XSS canary payload opt-in
-- [ ] 🟡 Log injection callback probe opt-in dan rate-limited
+- [x] 🔴 Rule schema support callback placeholder seperti `{{callback_url}}`
+- [x] 🟡 SSRF callback probe opt-in
+- [x] 🟡 XXE callback probe opt-in
+- [x] 🟡 Blind XSS canary payload opt-in
+- [x] 🟡 Log injection callback probe opt-in dan rate-limited
 
 ### 🏁 Sprint 27 — Definition of Done
 - Blind findings bisa diverifikasi lewat callback evidence
 - Semua OAST probe disabled by default dan butuh konfirmasi/flag eksplisit
 - Report menampilkan callback timeline dan correlation ID
+
+**Implementasi:** `temu collaborator serve` sekarang menyimpan callback HTTP dan optional DNS
+ke SQLite, sedangkan `temu collaborator evidence` bisa membaca event berdasarkan correlation ID.
+Scan menerima `--oast-callback-url`, `--oast-db`, `--oast-correlation-id`, dan
+`--oast-wait-secs`; placeholder `{{callback_url}}`/`{{callback_id}}` dirender per scan dan rule
+OAST selalu dianggap risky sehingga tetap butuh `--allow-risky-rules`. Evidence callback yang
+match correlation ID dikonversi menjadi finding terverifikasi dan timeline-nya muncul di
+JSON/HTML/PDF report.
 
 ---
 

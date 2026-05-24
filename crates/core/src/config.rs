@@ -51,6 +51,18 @@ pub struct AppConfig {
     /// Optional authenticated session profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_profile: Option<SessionProfile>,
+    /// Optional OAST/collaborator callback base URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oast_callback_url: Option<String>,
+    /// Optional OAST correlation identifier used in callback placeholders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oast_correlation_id: Option<String>,
+    /// Optional SQLite database path used to read collaborator evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oast_database_path: Option<PathBuf>,
+    /// Seconds to wait for callback evidence after OAST-aware probes.
+    #[serde(default)]
+    pub oast_wait_secs: u64,
 }
 
 fn default_max_recursion_depth() -> usize {
@@ -88,6 +100,10 @@ impl Default for AppConfig {
             browser_crawl_render_js: false,
             browser_crawl_browser_path: None,
             session_profile: None,
+            oast_callback_url: None,
+            oast_correlation_id: None,
+            oast_database_path: None,
+            oast_wait_secs: 0,
         }
     }
 }
@@ -120,7 +136,9 @@ impl AppConfig {
     /// `TEMU_BROWSER_CRAWL_MAX_DEPTH`, `TEMU_BROWSER_CRAWL_RENDER_JS`,
     /// `TEMU_BROWSER_CRAWL_BROWSER_PATH`, `TEMU_SESSION_PROFILE`,
     /// `TEMU_SESSION_BEARER_TOKEN`, `TEMU_SESSION_COOKIE`,
-    /// `TEMU_SESSION_BASE_URL`, `TEMU_SESSION_VALIDATE_URL`.
+    /// `TEMU_SESSION_BASE_URL`, `TEMU_SESSION_VALIDATE_URL`,
+    /// `TEMU_OAST_CALLBACK_URL`, `TEMU_OAST_CORRELATION_ID`,
+    /// `TEMU_OAST_DATABASE_PATH`, and `TEMU_OAST_WAIT_SECS`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
@@ -185,6 +203,20 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("TEMU_BROWSER_CRAWL_BROWSER_PATH") {
             self.browser_crawl_browser_path = Some(PathBuf::from(v));
+        }
+        if let Ok(v) = std::env::var("TEMU_OAST_CALLBACK_URL") {
+            self.oast_callback_url = Some(v);
+        }
+        if let Ok(v) = std::env::var("TEMU_OAST_CORRELATION_ID") {
+            self.oast_correlation_id = Some(v);
+        }
+        if let Ok(v) = std::env::var("TEMU_OAST_DATABASE_PATH") {
+            self.oast_database_path = Some(PathBuf::from(v));
+        }
+        if let Ok(v) = std::env::var("TEMU_OAST_WAIT_SECS")
+            && let Ok(n) = v.parse()
+        {
+            self.oast_wait_secs = n;
         }
         if let Ok(v) = std::env::var("TEMU_SESSION_PROFILE") {
             match SessionProfile::load(Path::new(&v)) {
@@ -274,6 +306,10 @@ mod tests {
         assert!(!config.browser_crawl_render_js);
         assert!(config.browser_crawl_browser_path.is_none());
         assert!(config.session_profile.is_none());
+        assert!(config.oast_callback_url.is_none());
+        assert!(config.oast_correlation_id.is_none());
+        assert!(config.oast_database_path.is_none());
+        assert_eq!(config.oast_wait_secs, 0);
     }
 
     #[test]
@@ -293,6 +329,10 @@ browser_crawl_max_pages = 10
 browser_crawl_max_depth = 1
 browser_crawl_render_js = true
 browser_crawl_browser_path = "/usr/bin/chromium"
+oast_callback_url = "http://127.0.0.1:8788/cb"
+oast_correlation_id = "temu-test"
+oast_database_path = "/tmp/oast.sqlite"
+oast_wait_secs = 2
 [session_profile]
 base_url_scope = "https://example.com"
 bearer_token = "inline-token"
@@ -315,6 +355,16 @@ bearer_token = "inline-token"
             config.browser_crawl_browser_path,
             Some(PathBuf::from("/usr/bin/chromium"))
         );
+        assert_eq!(
+            config.oast_callback_url.as_deref(),
+            Some("http://127.0.0.1:8788/cb")
+        );
+        assert_eq!(config.oast_correlation_id.as_deref(), Some("temu-test"));
+        assert_eq!(
+            config.oast_database_path,
+            Some(PathBuf::from("/tmp/oast.sqlite"))
+        );
+        assert_eq!(config.oast_wait_secs, 2);
         assert_eq!(
             config
                 .session_profile
@@ -434,5 +484,36 @@ bearer_token = "inline-token"
                 .session_headers_for_url("https://other.example/admin")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn test_apply_env_overrides_oast() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe {
+            std::env::set_var("TEMU_OAST_CALLBACK_URL", "https://cb.example/c");
+            std::env::set_var("TEMU_OAST_CORRELATION_ID", "cid-1");
+            std::env::set_var("TEMU_OAST_DATABASE_PATH", "/tmp/callbacks.sqlite");
+            std::env::set_var("TEMU_OAST_WAIT_SECS", "3");
+        }
+
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+
+        unsafe {
+            std::env::remove_var("TEMU_OAST_CALLBACK_URL");
+            std::env::remove_var("TEMU_OAST_CORRELATION_ID");
+            std::env::remove_var("TEMU_OAST_DATABASE_PATH");
+            std::env::remove_var("TEMU_OAST_WAIT_SECS");
+        }
+        assert_eq!(
+            config.oast_callback_url.as_deref(),
+            Some("https://cb.example/c")
+        );
+        assert_eq!(config.oast_correlation_id.as_deref(), Some("cid-1"));
+        assert_eq!(
+            config.oast_database_path,
+            Some(PathBuf::from("/tmp/callbacks.sqlite"))
+        );
+        assert_eq!(config.oast_wait_secs, 3);
     }
 }

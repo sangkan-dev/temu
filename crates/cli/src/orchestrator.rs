@@ -10,12 +10,13 @@ use discovery::{
 use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
 use hickory_resolver::TokioResolver;
-use reporter::types::{ScanResult, ScanStats, TargetSummary};
-use temu_core::{AppConfig, Asset, AssetType, Severity, Target};
+use reporter::types::{CallbackEvent, ScanResult, ScanStats, TargetSummary};
+use temu_core::{AppConfig, Asset, AssetType, Severity, Target, Vulnerability};
 use tracing::info;
 use verifier::run_verification;
 use vulnerability::run_vulnerability_scan;
 
+use crate::collaborator::load_callback_events;
 use crate::stateful::run_stateful_dast;
 
 const MAX_CIDR_HOSTS: u64 = 65_536;
@@ -285,6 +286,17 @@ pub async fn run_scan_with_ports(
             tracing::warn!("CVE check error (continuing): {e}");
         }
     }
+    if config.oast_wait_secs > 0 && config.oast_callback_url.is_some() {
+        eprintln!(
+            "[*] Waiting {}s for OAST callback evidence",
+            config.oast_wait_secs
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(config.oast_wait_secs)).await;
+    }
+
+    let callback_events = load_oast_callback_events(config);
+    detected_vulnerabilities.extend(callback_events_to_findings(&callback_events));
+
     let vulnerabilities = run_verification(&detected_vulnerabilities, config).await;
     let vulns_found = vulnerabilities.len() as u32;
     eprintln!(
@@ -313,6 +325,7 @@ pub async fn run_scan_with_ports(
         tech_stacks,
         vulnerabilities,
         target_summaries: vec![],
+        callback_events,
         scan_started_at: started_at,
         scan_finished_at: finished_at,
         stats: ScanStats {
@@ -346,6 +359,54 @@ fn session_profile_asset(config: &AppConfig) -> Option<Asset> {
         AssetType::Url,
         "cli::session_profile",
     ))
+}
+
+fn load_oast_callback_events(config: &AppConfig) -> Vec<CallbackEvent> {
+    let (Some(database_path), Some(correlation_id)) = (
+        config.oast_database_path.as_deref(),
+        config.oast_correlation_id.as_deref(),
+    ) else {
+        return Vec::new();
+    };
+
+    match load_callback_events(database_path, correlation_id) {
+        Ok(events) => events,
+        Err(error) => {
+            tracing::warn!("Failed to load OAST callback evidence: {error}");
+            Vec::new()
+        }
+    }
+}
+
+fn callback_events_to_findings(events: &[CallbackEvent]) -> Vec<Vulnerability> {
+    if events.is_empty() {
+        return Vec::new();
+    }
+
+    let first = &events[0];
+    let mut finding = Vulnerability::new(
+        "OAST-CALLBACK-EVIDENCE",
+        "Out-of-band callback observed",
+        Severity::High,
+        8.0,
+        format!(
+            "{} callback event(s) observed for correlation ID {}. First event: {} {} from {} at {}",
+            events.len(),
+            first.correlation_id,
+            first.method,
+            first.path,
+            first.remote_addr,
+            first.received_at.to_rfc3339()
+        ),
+        first.path.clone(),
+    );
+    finding.parameter = Some(first.correlation_id.clone());
+    finding.verified = true;
+    finding.remediation = Some(
+        "Investigate the request path that triggered the callback and restrict outbound server-side requests, XML entity resolution, reflected script execution, or log interpolation as applicable."
+            .to_string(),
+    );
+    vec![finding]
 }
 
 /// Loads scan targets from a file containing one URL per line.
@@ -587,6 +648,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
     let mut assets = Vec::new();
     let mut tech_stacks: HashMap<String, Vec<TechStack>> = HashMap::new();
     let mut vulnerabilities = Vec::new();
+    let mut callback_events = Vec::new();
     let mut target_summaries = Vec::new();
     let mut stats = ScanStats {
         subdomains_found: 0,
@@ -599,6 +661,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
     for result in results {
         assets.extend(result.assets.clone());
         vulnerabilities.extend(result.vulnerabilities.clone());
+        callback_events.extend(result.callback_events.clone());
         for (url, techs) in &result.tech_stacks {
             tech_stacks
                 .entry(url.clone())
@@ -630,6 +693,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
         tech_stacks,
         vulnerabilities,
         target_summaries,
+        callback_events,
         scan_started_at,
         scan_finished_at,
         stats,
@@ -654,6 +718,7 @@ fn service_only_scan_result(
         tech_stacks,
         vulnerabilities: Vec::new(),
         target_summaries: Vec::new(),
+        callback_events: Vec::new(),
         scan_started_at: started_at,
         scan_finished_at: finished_at,
         stats: ScanStats {
@@ -819,6 +884,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_callback_events_create_verified_finding() {
+        let event = CallbackEvent {
+            correlation_id: "cid-123".to_string(),
+            protocol: "http".to_string(),
+            method: "GET".to_string(),
+            path: "/cid-123".to_string(),
+            remote_addr: "127.0.0.1:45678".to_string(),
+            user_agent: Some("fixture".to_string()),
+            received_at: Utc::now(),
+        };
+
+        let findings = callback_events_to_findings(&[event]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].id, "OAST-CALLBACK-EVIDENCE");
+        assert!(findings[0].verified);
+        assert_eq!(findings[0].parameter.as_deref(), Some("cid-123"));
+    }
+
     fn test_scan_result(
         target: &str,
         vulnerabilities: Vec<Vulnerability>,
@@ -837,6 +922,7 @@ mod tests {
             },
             vulnerabilities,
             target_summaries: Vec::new(),
+            callback_events: Vec::new(),
             scan_started_at: started_at,
             scan_finished_at: started_at,
         }

@@ -63,6 +63,11 @@ pub enum Command {
         #[command(subcommand)]
         mode: RulesCommand,
     },
+    /// Run or inspect OAST collaborator callback infrastructure
+    Collaborator {
+        #[command(subcommand)]
+        mode: CollaboratorCommand,
+    },
     /// Run the realtime WebSocket dashboard server
     Serve {
         /// Bind address, defaults to localhost only.
@@ -146,6 +151,22 @@ pub enum ScanCommand {
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
         allow_risky_rules: bool,
+
+        /// OAST callback base URL used to resolve {{callback_url}} placeholders.
+        #[arg(long)]
+        oast_callback_url: Option<String>,
+
+        /// OAST callback SQLite database for loading callback evidence.
+        #[arg(long)]
+        oast_db: Option<std::path::PathBuf>,
+
+        /// OAST correlation ID. Generated automatically when omitted and callback URL is set.
+        #[arg(long)]
+        oast_correlation_id: Option<String>,
+
+        /// Seconds to wait for OAST callback evidence after probes complete.
+        #[arg(long)]
+        oast_wait_secs: Option<u64>,
     },
     /// Scan a list of targets from a file
     File {
@@ -164,6 +185,22 @@ pub enum ScanCommand {
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
         allow_risky_rules: bool,
+
+        /// OAST callback base URL used to resolve {{callback_url}} placeholders.
+        #[arg(long)]
+        oast_callback_url: Option<String>,
+
+        /// OAST callback SQLite database for loading callback evidence.
+        #[arg(long)]
+        oast_db: Option<std::path::PathBuf>,
+
+        /// OAST correlation ID. Generated automatically when omitted and callback URL is set.
+        #[arg(long)]
+        oast_correlation_id: Option<String>,
+
+        /// Seconds to wait for OAST callback evidence after probes complete.
+        #[arg(long)]
+        oast_wait_secs: Option<u64>,
     },
     /// Scan an entire network CIDR
     Network {
@@ -186,6 +223,22 @@ pub enum ScanCommand {
         /// Execute rules marked intrusive/destructive/DoS-prone.
         #[arg(long)]
         allow_risky_rules: bool,
+
+        /// OAST callback base URL used to resolve {{callback_url}} placeholders.
+        #[arg(long)]
+        oast_callback_url: Option<String>,
+
+        /// OAST callback SQLite database for loading callback evidence.
+        #[arg(long)]
+        oast_db: Option<std::path::PathBuf>,
+
+        /// OAST correlation ID. Generated automatically when omitted and callback URL is set.
+        #[arg(long)]
+        oast_correlation_id: Option<String>,
+
+        /// Seconds to wait for OAST callback evidence after probes complete.
+        #[arg(long)]
+        oast_wait_secs: Option<u64>,
     },
 }
 
@@ -240,6 +293,42 @@ pub enum RulesCommand {
         /// Permit rule classes requiring explicit opt-in during simulation.
         #[arg(long)]
         allow_risky_rules: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CollaboratorCommand {
+    /// Run a local HTTP and optional DNS callback collector
+    Serve {
+        /// HTTP bind address.
+        #[arg(long, default_value = "127.0.0.1:8788")]
+        bind: std::net::SocketAddr,
+
+        /// Optional UDP DNS bind address for DNS callback collection.
+        #[arg(long)]
+        dns_bind: Option<std::net::SocketAddr>,
+
+        /// Optional DNS callback domain controlled by the operator.
+        #[arg(long)]
+        dns_domain: Option<String>,
+
+        /// Public callback URL exposed to targets.
+        #[arg(long)]
+        public_url: Option<String>,
+
+        /// SQLite evidence database path.
+        #[arg(long, default_value = "./results/.cache/callbacks.sqlite")]
+        database: std::path::PathBuf,
+    },
+    /// Print callback evidence from the SQLite database
+    Evidence {
+        /// SQLite evidence database path.
+        #[arg(long, default_value = "./results/.cache/callbacks.sqlite")]
+        database: std::path::PathBuf,
+
+        /// Correlation ID to filter.
+        #[arg(long)]
+        correlation_id: String,
     },
 }
 
@@ -407,6 +496,48 @@ mod tests {
                     },
             } => {
                 assert!(allow_risky_rules);
+            }
+            _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_scan_single_oast_options_parse() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "single",
+            "--url",
+            "https://target.com",
+            "--oast-callback-url",
+            "https://cb.example",
+            "--oast-db",
+            "/tmp/callbacks.sqlite",
+            "--oast-correlation-id",
+            "cid-123",
+            "--oast-wait-secs",
+            "2",
+        ])
+        .expect("oast scan options must parse");
+
+        match cli.command {
+            Command::Scan {
+                mode:
+                    ScanCommand::Single {
+                        oast_callback_url,
+                        oast_db,
+                        oast_correlation_id,
+                        oast_wait_secs,
+                        ..
+                    },
+            } => {
+                assert_eq!(oast_callback_url.as_deref(), Some("https://cb.example"));
+                assert_eq!(
+                    oast_db,
+                    Some(std::path::PathBuf::from("/tmp/callbacks.sqlite"))
+                );
+                assert_eq!(oast_correlation_id.as_deref(), Some("cid-123"));
+                assert_eq!(oast_wait_secs, Some(2));
             }
             _ => panic!("expected Scan::Single"),
         }
@@ -664,6 +795,63 @@ mod tests {
                 );
             }
             _ => panic!("expected Rules::Update"),
+        }
+    }
+
+    #[test]
+    fn test_collaborator_commands_parse() {
+        let serve = Cli::try_parse_from([
+            "temu",
+            "collaborator",
+            "serve",
+            "--bind",
+            "127.0.0.1:9001",
+            "--dns-bind",
+            "127.0.0.1:5353",
+            "--dns-domain",
+            "oast.example.com",
+            "--public-url",
+            "https://cb.example",
+            "--database",
+            "/tmp/callbacks.sqlite",
+        ])
+        .expect("collaborator serve must parse");
+        match serve.command {
+            Command::Collaborator {
+                mode:
+                    CollaboratorCommand::Serve {
+                        bind,
+                        dns_bind,
+                        dns_domain,
+                        public_url,
+                        database,
+                    },
+            } => {
+                assert_eq!(bind.to_string(), "127.0.0.1:9001");
+                assert_eq!(
+                    dns_bind.map(|addr| addr.to_string()).as_deref(),
+                    Some("127.0.0.1:5353")
+                );
+                assert_eq!(dns_domain.as_deref(), Some("oast.example.com"));
+                assert_eq!(public_url.as_deref(), Some("https://cb.example"));
+                assert_eq!(database, std::path::PathBuf::from("/tmp/callbacks.sqlite"));
+            }
+            _ => panic!("expected Collaborator::Serve"),
+        }
+
+        let evidence = Cli::try_parse_from([
+            "temu",
+            "collaborator",
+            "evidence",
+            "--correlation-id",
+            "cid-123",
+        ])
+        .expect("collaborator evidence must parse");
+        match evidence.command {
+            Command::Collaborator {
+                mode: CollaboratorCommand::Evidence { correlation_id, .. },
+            } => assert_eq!(correlation_id, "cid-123"),
+            _ => panic!("expected Collaborator::Evidence"),
         }
     }
 

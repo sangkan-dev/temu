@@ -1,6 +1,7 @@
 // CLI crate — entrypoint, argument parsing, scan orchestration
 
 mod args;
+use cli::collaborator::{self, CollaboratorServerConfig};
 use cli::distributed;
 use cli::orchestrator;
 use cli::realtime::{RealtimeServerConfig, run_realtime_server};
@@ -8,7 +9,10 @@ use cli::realtime::{RealtimeServerConfig, run_realtime_server};
 use std::path::PathBuf;
 
 use anyhow::Context;
-use args::{Cli, Command, DiscoveryModeArg, ReportFormat, RulesCommand, ScanCommand, WordlistSize};
+use args::{
+    Cli, CollaboratorCommand, Command, DiscoveryModeArg, ReportFormat, RulesCommand, ScanCommand,
+    WordlistSize,
+};
 use clap::Parser;
 use cli::rules_update;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
@@ -42,6 +46,10 @@ async fn main() -> anyhow::Result<()> {
                 browser_render_js,
                 browser_path,
                 allow_risky_rules,
+                oast_callback_url,
+                oast_db,
+                oast_correlation_id,
+                oast_wait_secs,
             } => {
                 // Validate URL early
                 reqwest::Url::parse(&url).with_context(|| format!("Invalid URL: {url}"))?;
@@ -94,6 +102,13 @@ async fn main() -> anyhow::Result<()> {
                     );
                     config.allow_risky_rules = true;
                 }
+                apply_oast_options(
+                    &mut config,
+                    oast_callback_url,
+                    oast_db,
+                    oast_correlation_id,
+                    oast_wait_secs,
+                );
                 let output_dir = output.unwrap_or_else(|| config.output_dir.clone());
 
                 // Wordlist override: explicit path wins, otherwise resolve from size preset
@@ -138,6 +153,10 @@ async fn main() -> anyhow::Result<()> {
                 session_profile,
                 session_role,
                 allow_risky_rules,
+                oast_callback_url,
+                oast_db,
+                oast_correlation_id,
+                oast_wait_secs,
             } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
                 let mut config =
@@ -159,6 +178,13 @@ async fn main() -> anyhow::Result<()> {
                     );
                     config.allow_risky_rules = true;
                 }
+                apply_oast_options(
+                    &mut config,
+                    oast_callback_url,
+                    oast_db,
+                    oast_correlation_id,
+                    oast_wait_secs,
+                );
                 let selected_ports = default_top_ports();
                 let result = orchestrator::run_file_scan(
                     &list,
@@ -176,6 +202,10 @@ async fn main() -> anyhow::Result<()> {
                 session_profile,
                 session_role,
                 allow_risky_rules,
+                oast_callback_url,
+                oast_db,
+                oast_correlation_id,
+                oast_wait_secs,
             } => {
                 let default_config_path = std::path::PathBuf::from("config/default.toml");
                 let mut config =
@@ -197,6 +227,13 @@ async fn main() -> anyhow::Result<()> {
                     );
                     config.allow_risky_rules = true;
                 }
+                apply_oast_options(
+                    &mut config,
+                    oast_callback_url,
+                    oast_db,
+                    oast_correlation_id,
+                    oast_wait_secs,
+                );
                 let selected_ports = match ports {
                     Some(ports) => parse_ports(&ports)
                         .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
@@ -328,6 +365,34 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
+        Command::Collaborator { mode } => match mode {
+            CollaboratorCommand::Serve {
+                bind,
+                dns_bind,
+                dns_domain,
+                public_url,
+                database,
+            } => {
+                collaborator::run_collaborator_server(CollaboratorServerConfig {
+                    http_bind: bind,
+                    dns_bind,
+                    dns_domain,
+                    public_url,
+                    database_path: database,
+                })
+                .await
+                .with_context(|| "Collaborator server failed")?;
+            }
+            CollaboratorCommand::Evidence {
+                database,
+                correlation_id,
+            } => {
+                let events = collaborator::load_callback_events(&database, &correlation_id)
+                    .with_context(|| "Failed to load callback evidence")?;
+                println!("{}", serde_json::to_string_pretty(&events)?);
+            }
+        },
+
         Command::Serve { bind, token } => {
             let default_config_path = std::path::PathBuf::from("config/default.toml");
             let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
@@ -343,6 +408,36 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn apply_oast_options(
+    config: &mut temu_core::AppConfig,
+    callback_url: Option<String>,
+    database_path: Option<std::path::PathBuf>,
+    correlation_id: Option<String>,
+    wait_secs: Option<u64>,
+) {
+    if let Some(callback_url) = callback_url {
+        config.oast_callback_url = Some(callback_url);
+    }
+    if let Some(database_path) = database_path {
+        config.oast_database_path = Some(database_path);
+    }
+    if config.oast_callback_url.is_some() && config.oast_correlation_id.is_none() {
+        config.oast_correlation_id =
+            Some(format!("temu-{}", chrono::Utc::now().timestamp_millis()));
+    }
+    if config.oast_callback_url.is_some() && config.oast_database_path.is_none() {
+        config.oast_database_path = Some(std::path::PathBuf::from(
+            "./results/.cache/callbacks.sqlite",
+        ));
+    }
+    if let Some(correlation_id) = correlation_id {
+        config.oast_correlation_id = Some(correlation_id);
+    }
+    if let Some(wait_secs) = wait_secs {
+        config.oast_wait_secs = wait_secs;
+    }
 }
 
 async fn simulate_rules(

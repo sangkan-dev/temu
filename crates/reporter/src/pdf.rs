@@ -68,6 +68,11 @@ pub fn generate_pdf(result: &ScanResult, output_dir: &Path) -> Result<PathBuf, T
         }
     }
 
+    if !result.callback_events.is_empty() {
+        let callbacks = report.add_page("OAST Callback Timeline");
+        report.render_callback_events(&callbacks, result);
+    }
+
     let assets = report.add_page("Assets and Recommendations");
     report.render_assets_and_recommendations(&assets, result);
 
@@ -133,14 +138,20 @@ impl PdfReport {
         self.metric(layer, "Paths", result.stats.paths_found, 108.0);
         self.metric(layer, "Parameters", result.stats.parameters_found, 94.0);
         self.metric(layer, "Vulnerabilities", result.stats.vulns_found, 80.0);
+        self.metric(
+            layer,
+            "OAST callbacks",
+            result.callback_events.len() as u32,
+            66.0,
+        );
 
-        self.section_title(layer, "Scan Window", 56.0);
+        self.section_title(layer, "Scan Window", 48.0);
         self.text(
             layer,
             &format!("Started: {}", result.scan_started_at.to_rfc3339()),
             10.0,
             29.0,
-            46.0,
+            38.0,
             false,
         );
         self.text(
@@ -148,7 +159,7 @@ impl PdfReport {
             &format!("Finished: {}", result.scan_finished_at.to_rfc3339()),
             10.0,
             29.0,
-            36.0,
+            28.0,
             false,
         );
         self.footer(layer, 1);
@@ -346,6 +357,45 @@ impl PdfReport {
             .as_deref()
             .unwrap_or("Review and patch the affected component.");
         self.wrapped_text(layer, remediation, 9.5, (MARGIN_LEFT_MM, y), 96, false);
+        self.footer(layer, self.page_number);
+    }
+
+    fn render_callback_events(&self, layer: &PdfLayerReference, result: &ScanResult) {
+        self.header(layer, "OAST Callback Timeline");
+        self.text(
+            layer,
+            "OAST Callback Timeline",
+            22.0,
+            MARGIN_LEFT_MM,
+            CONTENT_TOP_MM,
+            true,
+        );
+        let mut y = 236.0;
+        for event in result.callback_events.iter().take(14) {
+            let line = format!(
+                "{} | {} | {} {} | {} | ua={}",
+                event.received_at.to_rfc3339(),
+                event.correlation_id,
+                event.method,
+                event.path,
+                event.remote_addr,
+                event.user_agent.as_deref().unwrap_or("-")
+            );
+            y = self.wrapped_text(layer, &line, 8.5, (MARGIN_LEFT_MM, y), 116, false) - 4.0;
+        }
+        if result.callback_events.len() > 14 {
+            self.text(
+                layer,
+                &format!(
+                    "... {} more callback events in JSON/HTML reports",
+                    result.callback_events.len() - 14
+                ),
+                9.0,
+                MARGIN_LEFT_MM,
+                y,
+                false,
+            );
+        }
         self.footer(layer, self.page_number);
     }
 
@@ -664,6 +714,7 @@ mod tests {
             tech_stacks,
             vulnerabilities: vec![vulnerability],
             target_summaries: vec![],
+            callback_events: vec![],
             scan_started_at: Utc::now(),
             scan_finished_at: Utc::now(),
             stats: crate::types::ScanStats {
