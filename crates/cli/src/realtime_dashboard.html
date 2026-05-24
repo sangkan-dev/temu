@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temu Realtime</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #f6f7f9; color: #17191c; }
+    header { padding: 16px 20px; border-bottom: 1px solid #d7dce2; background: #fff; }
+    main { display: grid; grid-template-columns: 360px 1fr; gap: 16px; padding: 16px; }
+    section { background: #fff; border: 1px solid #d7dce2; border-radius: 6px; padding: 14px; }
+    label { display: block; margin-top: 10px; font-size: 13px; color: #49515a; }
+    input, select, button { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 9px; border: 1px solid #b9c0c8; border-radius: 4px; font: inherit; }
+    button { cursor: pointer; background: #1f6feb; color: white; border-color: #1f6feb; }
+    button.secondary { background: #fff; color: #17191c; border-color: #b9c0c8; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .status { font-size: 13px; color: #49515a; }
+    #events { display: grid; gap: 8px; max-height: calc(100vh - 140px); overflow: auto; }
+    .event { border-left: 4px solid #6f7782; padding: 8px 10px; background: #f9fafb; border-radius: 4px; }
+    .error { border-color: #c9372c; }
+    .finding { border-color: #d97008; }
+    .completed { border-color: #1f883d; }
+    .artifact { border-color: #8250df; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; font-size: 12px; color: #3c444d; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Temu Realtime</h1>
+    <div class="status" id="status">Disconnected</div>
+  </header>
+  <main>
+    <section>
+      <label>WebSocket token</label>
+      <input id="token" type="password" autocomplete="off">
+      <button class="secondary" id="connect">Connect</button>
+      <label>Target URL</label>
+      <input id="url" placeholder="https://example.com">
+      <div class="row">
+        <div>
+          <label>Mode</label>
+          <select id="mode">
+            <option value="hybrid">Hybrid</option>
+            <option value="passive">Passive</option>
+            <option value="heuristic">Heuristic</option>
+            <option value="bruteforce">Bruteforce</option>
+          </select>
+        </div>
+        <div>
+          <label>Ports</label>
+          <input id="ports" placeholder="80,443">
+        </div>
+      </div>
+      <button id="start">Start scan</button>
+      <div class="row">
+        <button class="secondary" id="pause">Pause</button>
+        <button class="secondary" id="resume">Resume</button>
+      </div>
+      <button class="secondary" id="cancel">Cancel</button>
+      <label>Active scan ID</label>
+      <input id="scanId" readonly>
+    </section>
+    <section>
+      <h2>Events</h2>
+      <div id="events"></div>
+    </section>
+  </main>
+  <script>
+    let ws;
+    let activeScanId = "";
+    const status = document.getElementById("status");
+    const events = document.getElementById("events");
+    const scanId = document.getElementById("scanId");
+    function connect() {
+      const token = document.getElementById("token").value.trim();
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      const query = token ? `?token=${encodeURIComponent(token)}` : "";
+      ws = new WebSocket(`${scheme}://${location.host}/ws${query}`);
+      ws.onopen = () => status.textContent = "Connected";
+      ws.onclose = () => status.textContent = "Disconnected";
+      ws.onerror = () => status.textContent = "Connection error";
+      ws.onmessage = (message) => {
+        const event = JSON.parse(message.data);
+        if (event.scan_id) {
+          activeScanId = event.scan_id;
+          scanId.value = activeScanId;
+        }
+        addEvent(event);
+      };
+    }
+    function send(command) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) connect();
+      setTimeout(() => ws && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(command)), 120);
+    }
+    function addEvent(event) {
+      const item = document.createElement("div");
+      item.className = `event ${event.kind}`;
+      item.innerHTML = `<strong>${event.kind}</strong> ${event.stage}: ${event.message}<pre>${JSON.stringify(event.payload, null, 2)}</pre>`;
+      events.prepend(item);
+    }
+    document.getElementById("connect").onclick = connect;
+    document.getElementById("start").onclick = () => send({
+      type: "start_scan",
+      url: document.getElementById("url").value,
+      mode: document.getElementById("mode").value,
+      ports: document.getElementById("ports").value || null
+    });
+    document.getElementById("pause").onclick = () => send({type: "pause_scan", scan_id: Number(activeScanId)});
+    document.getElementById("resume").onclick = () => send({type: "resume_scan", scan_id: Number(activeScanId)});
+    document.getElementById("cancel").onclick = () => send({type: "cancel_scan", scan_id: Number(activeScanId)});
+    connect();
+  </script>
+</body>
+</html>

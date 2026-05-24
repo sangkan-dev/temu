@@ -3,6 +3,7 @@
 mod args;
 use cli::distributed;
 use cli::orchestrator;
+use cli::realtime::{RealtimeServerConfig, run_realtime_server};
 
 use std::path::PathBuf;
 
@@ -291,6 +292,19 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         },
+
+        Command::Serve { bind, token } => {
+            let default_config_path = std::path::PathBuf::from("config/default.toml");
+            let config = temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+            let token = token.or_else(|| std::env::var("TEMU_SERVER_TOKEN").ok());
+            run_realtime_server(RealtimeServerConfig {
+                bind,
+                token,
+                app_config: config,
+            })
+            .await
+            .with_context(|| "Realtime server failed")?;
+        }
     }
 
     Ok(())

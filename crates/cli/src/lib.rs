@@ -2,4 +2,5 @@
 
 pub mod distributed;
 pub mod orchestrator;
+pub mod realtime;
 pub mod rules_update;

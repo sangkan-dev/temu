@@ -63,6 +63,16 @@ pub enum Command {
         #[command(subcommand)]
         mode: RulesCommand,
     },
+    /// Run the realtime WebSocket dashboard server
+    Serve {
+        /// Bind address, defaults to localhost only.
+        #[arg(long, default_value = "127.0.0.1:8787")]
+        bind: std::net::SocketAddr,
+
+        /// WebSocket auth token. Required for non-localhost binds.
+        #[arg(long)]
+        token: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -341,6 +351,19 @@ mod tests {
                 );
             }
             _ => panic!("expected Scan::Single"),
+        }
+    }
+
+    #[test]
+    fn test_serve_parses() {
+        let cli = Cli::try_parse_from(["temu", "serve", "--bind", "127.0.0.1:9000"])
+            .expect("serve must parse");
+        match cli.command {
+            Command::Serve { bind, token } => {
+                assert_eq!(bind.to_string(), "127.0.0.1:9000");
+                assert!(token.is_none());
+            }
+            _ => panic!("expected Serve"),
         }
     }
 

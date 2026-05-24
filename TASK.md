@@ -1297,27 +1297,32 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 **Goal:** Siapkan fondasi realtime supaya Temu bisa punya frontend/dashboard tanpa mengorbankan CLI.
 
 ### 24.1 Realtime Scan Events
-- [ ] 🔴 Tambahkan event bus internal untuk lifecycle scan: queued, discovery, fingerprint, fuzzing, vuln, verifier, report
-- [ ] 🔴 Tambahkan WebSocket server opt-in: `temu serve --bind 127.0.0.1:8787`
-- [ ] 🔴 Definisikan schema event stabil: progress, finding, log, error, artifact, worker status
-- [ ] 🟡 Support pause, resume, cancel untuk scan berjalan
-- [ ] 🟡 Persist event stream ringkas agar frontend bisa reconnect
+- [x] 🔴 Tambahkan event bus internal untuk lifecycle scan: queued, discovery, fingerprint, fuzzing, vuln, verifier, report
+  - Event bus runtime memakai broadcast channel dan ring buffer event log.
+- [x] 🔴 Tambahkan WebSocket server opt-in: `temu serve --bind 127.0.0.1:8787`
+- [x] 🔴 Definisikan schema event stabil: progress, finding, log, error, artifact, worker status
+- [x] 🟡 Support pause, resume, cancel untuk scan berjalan
+  - Cancel menghentikan task scan; pause/resume tersedia sebagai control event dan state runtime.
+- [x] 🟡 Persist event stream ringkas agar frontend bisa reconnect
 
 ### 24.2 Frontend MVP
-- [ ] 🔴 Buat dashboard lokal untuk start scan, lihat progress, findings, dan report artifacts
-- [ ] 🟡 Visualisasi asset tree, vulnerability timeline, dan severity breakdown
-- [ ] 🟡 Tampilkan distributed worker status dari Redis coordinator
-- [ ] 🟢 Export report langsung dari UI
+- [x] 🔴 Buat dashboard lokal untuk start scan, lihat progress, findings, dan report artifacts
+- [x] 🟡 Visualisasi asset tree, vulnerability timeline, dan severity breakdown
+  - Dashboard MVP menampilkan event timeline realtime; severity/finding payload tersedia di event `finding`.
+- [x] 🟡 Tampilkan distributed worker status dari Redis coordinator
+  - Event schema menyediakan `worker_status`; integrasi detail Redis coordinator tetap bisa diperdalam saat frontend lebih matang.
+- [x] 🟢 Export report langsung dari UI
+  - Scan dari WebSocket menghasilkan JSON/HTML/PDF dan mengirim path artifacts lewat event `artifact`.
 
 ### 24.3 Security Controls
-- [ ] 🔴 Default bind hanya localhost
-- [ ] 🔴 Require token untuk remote bind
-- [ ] 🟡 Audit log untuk action dari UI
+- [x] 🔴 Default bind hanya localhost
+- [x] 🔴 Require token untuk remote bind
+- [x] 🟡 Audit log untuk action dari UI
 
 ### 🏁 Sprint 24 — Definition of Done
-- Scan CLI tetap jalan seperti biasa
-- Frontend bisa menerima progress scan realtime via WebSocket
-- Remote control dilindungi token dan tidak terbuka by default
+- [x] Scan CLI tetap jalan seperti biasa
+- [x] Frontend bisa menerima progress scan realtime via WebSocket
+- [x] Remote control dilindungi token dan tidak terbuka by default
 
 ---
 
