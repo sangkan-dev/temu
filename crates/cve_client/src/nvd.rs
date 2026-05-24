@@ -127,6 +127,7 @@ fn normalize_nvd_vulnerability(
         published_date: cve.published,
         last_modified: cve.last_modified,
         exploitability: Exploitability::Theoretical,
+        epss_score: None,
         source: "nvd".to_string(),
         cached_at: Utc::now(),
     })

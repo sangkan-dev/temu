@@ -291,6 +291,41 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", path.display());
                 }
             }
+            RulesCommand::Validate { rules_dir } => {
+                let results = vulnerability::validate_rules_dir(&rules_dir)
+                    .with_context(|| format!("Failed to validate rules in {rules_dir:?}"))?;
+                let failed = results.iter().filter(|result| !result.valid).count();
+                println!("{}", serde_json::to_string_pretty(&results)?);
+                if failed > 0 {
+                    anyhow::bail!("{failed} rule file(s) failed validation");
+                }
+                eprintln!("[+] Validated {} rule file(s)", results.len());
+            }
+            RulesCommand::Simulate {
+                target_fixture,
+                rules_dir,
+                allow_risky_rules,
+            } => {
+                reqwest::Url::parse(&target_fixture)
+                    .with_context(|| format!("Invalid fixture URL: {target_fixture}"))?;
+                let results = vulnerability::validate_rules_dir(&rules_dir)
+                    .with_context(|| format!("Failed to validate rules in {rules_dir:?}"))?;
+                let failed = results.iter().filter(|result| !result.valid).count();
+                if failed > 0 {
+                    anyhow::bail!("{failed} rule file(s) failed validation; simulation aborted");
+                }
+                let default_config_path = std::path::PathBuf::from("config/default.toml");
+                let mut config =
+                    temu_core::AppConfig::load_or_default_with_env(&default_config_path);
+                config.rules_dir = rules_dir;
+                config.allow_risky_rules = allow_risky_rules;
+                let findings = simulate_rules(&target_fixture, &config).await?;
+                println!("{}", serde_json::to_string_pretty(&findings)?);
+                eprintln!(
+                    "[+] Rule simulation completed: {} finding(s)",
+                    findings.len()
+                );
+            }
         },
 
         Command::Serve { bind, token } => {
@@ -308,6 +343,25 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn simulate_rules(
+    fixture_url: &str,
+    config: &temu_core::AppConfig,
+) -> anyhow::Result<Vec<temu_core::Vulnerability>> {
+    let rules = vulnerability::load_rules(&config.rules_dir)
+        .with_context(|| format!("Failed to load rules from {:?}", config.rules_dir))?;
+    let mut findings = Vec::new();
+    for rule in rules {
+        if !config.allow_risky_rules && vulnerability::requires_risky_rule_ack(&rule) {
+            eprintln!("[!] Skipping risky rule '{}' during simulation", rule.id);
+            continue;
+        }
+        if let Some(finding) = vulnerability::execute_rule(&rule, fixture_url, None, config).await {
+            findings.push(finding);
+        }
+    }
+    Ok(findings)
 }
 
 fn write_multi_target_reports(

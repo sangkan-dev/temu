@@ -3,12 +3,16 @@
 pub mod cisa;
 pub mod cpe;
 pub mod db;
+pub mod epss;
 pub mod nvd;
 pub mod types;
 
 pub use cisa::{fetch_cisa_kev, fetch_cisa_kev_with_base, fetch_cisa_kev_with_cache};
-pub use cpe::build_cpe;
-pub use db::{cache_cve_entries, init_database, mark_known_exploited, query_cves_by_cpe};
+pub use cpe::{ApplicabilityStatus, CpeApplicability, build_cpe, explain_cpe_applicability};
+pub use db::{
+    cache_cve_entries, cache_kev_entries, init_database, mark_known_exploited, query_cves_by_cpe,
+};
+pub use epss::{enrich_epss_scores, fetch_epss_scores, fetch_epss_scores_with_base};
 pub use nvd::{fetch_cves_from_nvd, fetch_cves_from_nvd_with_base};
 pub use types::{CveEntry, Exploitability};
 
@@ -33,7 +37,9 @@ pub async fn check_cves(
     let mut vulnerabilities = Vec::new();
 
     for tech in tech_stacks {
-        let Some(cpe) = build_cpe(tech) else {
+        let applicability = explain_cpe_applicability(tech);
+        let Some(cpe) = applicability.cpe.clone() else {
+            info!("CVE applicability skipped: {}", applicability.reason);
             continue;
         };
 
@@ -41,8 +47,11 @@ pub async fn check_cves(
         if entries.is_empty() {
             match fetch_cves_from_nvd(&cpe, std::env::var("NVD_API_KEY").ok().as_deref()).await {
                 Ok(fetched) => {
-                    cache_cve_entries(&conn, &fetched)?;
                     entries = fetched;
+                    if let Err(e) = enrich_epss_scores(&mut entries).await {
+                        warn!("EPSS enrichment failed for {}: {e}", tech.name);
+                    }
+                    cache_cve_entries(&conn, &entries)?;
                 }
                 Err(e) => {
                     warn!("CVE fetch failed for {} ({}): {e}", tech.name, cpe);
@@ -50,7 +59,17 @@ pub async fn check_cves(
             }
         }
 
-        vulnerabilities.extend(entries.into_iter().map(cve_to_vulnerability));
+        entries.sort_by(|left, right| {
+            right
+                .priority_score()
+                .total_cmp(&left.priority_score())
+                .then_with(|| left.cve_id.cmp(&right.cve_id))
+        });
+        vulnerabilities.extend(
+            entries
+                .into_iter()
+                .map(|entry| cve_to_vulnerability(entry, &applicability)),
+        );
     }
 
     info!(
@@ -78,9 +97,9 @@ pub async fn update_cve_cache_for_cpes(
     let db_path = default_db_path(config);
     let conn = init_database(&db_path)?;
     let kev_ids = fetch_cisa_kev().await?;
-    mark_known_exploited(&conn, &kev_ids)?;
     let kev_entries: Vec<CveEntry> = kev_ids
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|cve_id| CveEntry {
             cve_id,
             description: "Known exploited vulnerability from CISA KEV catalog".to_string(),
@@ -90,19 +109,24 @@ pub async fn update_cve_cache_for_cpes(
             published_date: None,
             last_modified: None,
             exploitability: Exploitability::KnownExploited,
+            epss_score: None,
             source: "cisa_kev".to_string(),
             cached_at: Utc::now(),
         })
         .collect();
-    cache_cve_entries(&conn, &kev_entries)?;
+    cache_kev_entries(&conn, &kev_entries)?;
 
     let mut cached = kev_entries.len();
     for cpe in cpes {
-        let entries =
+        let mut entries =
             fetch_cves_from_nvd(cpe, std::env::var("NVD_API_KEY").ok().as_deref()).await?;
+        if let Err(e) = enrich_epss_scores(&mut entries).await {
+            warn!("EPSS enrichment failed for {cpe}: {e}");
+        }
         cached += entries.len();
         cache_cve_entries(&conn, &entries)?;
     }
+    mark_known_exploited(&conn, &kev_ids)?;
 
     Ok(cached)
 }
@@ -111,14 +135,26 @@ fn default_db_path(config: &AppConfig) -> PathBuf {
     config.output_dir.join(".cache").join("cve_cache.sqlite")
 }
 
-fn cve_to_vulnerability(entry: CveEntry) -> Vulnerability {
+fn cve_to_vulnerability(entry: CveEntry, applicability: &CpeApplicability) -> Vulnerability {
+    let epss = entry
+        .epss_score
+        .map(|score| format!("{score:.4}"))
+        .unwrap_or_else(|| "unavailable".to_string());
     let mut vuln = Vulnerability::new(
         entry.cve_id.clone(),
-        format!("Version-related CVE: {}", entry.cve_id),
+        format!("[Metadata only] Version-related CVE: {}", entry.cve_id),
         entry.severity.clone(),
         entry.cvss_score,
-        entry.description,
-        entry.cpe_match.first().cloned().unwrap_or_default(),
+        format!(
+            "Metadata-only applicability; no exploit probe executed. {}. Source: {}; exploitation: {}; EPSS: {}; priority score: {:.2}. Advisory: {}",
+            applicability.reason,
+            entry.source,
+            entry.exploitability.as_str(),
+            epss,
+            entry.priority_score(),
+            entry.description
+        ),
+        applicability.cpe.clone().unwrap_or_default(),
     );
     vuln.verified = false;
     vuln.remediation = Some("Upgrade the affected component to a patched version.".to_string());
@@ -142,14 +178,18 @@ mod tests {
             published_date: None,
             last_modified: None,
             exploitability: Exploitability::Theoretical,
+            epss_score: Some(0.8),
             source: "nvd".to_string(),
             cached_at: Utc::now(),
         };
 
-        let vuln = cve_to_vulnerability(entry);
+        let tech = TechStack::new("PHP", Some("8.1".to_string()), 0.95, TechCategory::Language);
+        let vuln = cve_to_vulnerability(entry, &explain_cpe_applicability(&tech));
         assert_eq!(vuln.id, "CVE-2024-0001");
         assert_eq!(vuln.severity, Severity::Critical);
         assert_eq!(vuln.cvss_score, 9.8);
+        assert!(vuln.name.contains("Metadata only"));
+        assert!(vuln.proof.contains("EPSS: 0.8000"));
     }
 
     #[test]
@@ -200,6 +240,7 @@ mod tests {
                 published_date: None,
                 last_modified: None,
                 exploitability: Exploitability::Theoretical,
+                epss_score: None,
                 source: "nvd".to_string(),
                 cached_at: Utc::now(),
             }],
@@ -212,5 +253,6 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].id, "CVE-2024-9999");
         assert_eq!(findings[0].severity, Severity::High);
+        assert!(findings[0].proof.contains("Metadata-only applicability"));
     }
 }

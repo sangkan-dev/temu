@@ -221,6 +221,26 @@ pub enum RulesCommand {
         #[arg(long)]
         repo_url: Option<String>,
     },
+    /// Validate rule schema, safety classification, and matcher confidence locally
+    Validate {
+        /// Directory containing YAML vulnerability rules.
+        #[arg(long, default_value = "./rules")]
+        rules_dir: std::path::PathBuf,
+    },
+    /// Execute validated rules against an explicitly supplied local/test fixture target
+    Simulate {
+        /// Authorized HTTP fixture target URL.
+        #[arg(long)]
+        target_fixture: String,
+
+        /// Directory containing YAML vulnerability rules.
+        #[arg(long, default_value = "./rules")]
+        rules_dir: std::path::PathBuf,
+
+        /// Permit rule classes requiring explicit opt-in during simulation.
+        #[arg(long)]
+        allow_risky_rules: bool,
+    },
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -582,6 +602,43 @@ mod tests {
                 assert_eq!(cpe, vec!["cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*"]);
             }
             _ => panic!("expected Cve::Update"),
+        }
+    }
+
+    #[test]
+    fn test_rules_validate_and_simulate_parse() {
+        let validate =
+            Cli::try_parse_from(["temu", "rules", "validate", "--rules-dir", "/tmp/rules"])
+                .expect("rules validate must parse");
+        assert!(matches!(
+            validate.command,
+            Command::Rules {
+                mode: RulesCommand::Validate { .. }
+            }
+        ));
+
+        let simulate = Cli::try_parse_from([
+            "temu",
+            "rules",
+            "simulate",
+            "--target-fixture",
+            "http://127.0.0.1:3000/",
+            "--allow-risky-rules",
+        ])
+        .expect("rules simulate must parse");
+        match simulate.command {
+            Command::Rules {
+                mode:
+                    RulesCommand::Simulate {
+                        target_fixture,
+                        allow_risky_rules,
+                        ..
+                    },
+            } => {
+                assert_eq!(target_fixture, "http://127.0.0.1:3000/");
+                assert!(allow_risky_rules);
+            }
+            _ => panic!("expected Rules::Simulate"),
         }
     }
 

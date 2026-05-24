@@ -1331,27 +1331,33 @@ Catatan: semua item fase ini bersifat roadmap. Default Temu tetap aman, rate-lim
 **Goal:** Membuat integrasi CVE/rules lebih bernilai: bukan sekadar download metadata, tapi menghasilkan kandidat rule yang bisa divalidasi dan dijelaskan.
 
 ### 25.1 CVE Applicability Engine
-- [ ] 🔴 Mapping teknologi fingerprint ke CPE alias/version range
-- [ ] 🔴 Explainability: kenapa CVE dianggap applicable atau tidak
-- [ ] 🟡 Prioritasi CISA KEV, EPSS, CVSS, exploit maturity, dan exposure context
-- [ ] 🟡 Tandai CVE metadata-only vs actively probed
+- [x] 🔴 Mapping teknologi fingerprint ke CPE alias/version range
+- [x] 🔴 Explainability: kenapa CVE dianggap applicable atau tidak
+- [x] 🟡 Prioritasi CISA KEV, EPSS, CVSS, exploit maturity, dan exposure context
+- [x] 🟡 Tandai CVE metadata-only vs actively probed
 
 ### 25.2 Automated Candidate Rules
-- [ ] 🔴 Pipeline GitHub Actions di `temu-rules` untuk membuat candidate rule dari NVD/CISA/Exploit-DB/advisory
-- [ ] 🔴 Candidate rule wajib masuk folder staging dan dibuat PR, bukan auto-merge
-- [ ] 🟡 Validator rule: schema, duplicate id, unsafe payload keyword, regex performance, timeout budget
-- [ ] 🟡 Risk classifier: safe, intrusive, destructive, DoS-prone, unknown
-- [ ] 🟢 Auto-generate remediation dan references dari advisory resmi
+- [x] 🔴 Pipeline GitHub Actions di `temu-rules` untuk membuat candidate rule dari NVD/CISA/Exploit-DB/advisory
+- [x] 🔴 Candidate rule wajib masuk folder staging dan dibuat PR, bukan auto-merge
+- [x] 🟡 Validator rule: schema, duplicate id, unsafe payload keyword, regex performance, timeout budget
+- [x] 🟡 Risk classifier: safe, intrusive, destructive, DoS-prone, unknown
+- [x] 🟢 Auto-generate remediation dan references dari advisory resmi
 
 ### 25.3 Rule Simulation
-- [ ] 🟡 Tambahkan `temu rules validate` untuk validasi lokal
-- [ ] 🟡 Tambahkan `temu rules simulate --target-fixture` untuk test rule terhadap fixture
-- [ ] 🟢 Score confidence rule berdasarkan matcher strength dan false-positive risk
+- [x] 🟡 Tambahkan `temu rules validate` untuk validasi lokal
+- [x] 🟡 Tambahkan `temu rules simulate --target-fixture` untuk test rule terhadap fixture
+- [x] 🟢 Score confidence rule berdasarkan matcher strength dan false-positive risk
 
 ### 🏁 Sprint 25 — Definition of Done
 - CVE baru bisa masuk sebagai candidate rule tanpa edit manual berulang
 - Temu bisa menjelaskan CVE applicability secara transparan
 - Rule berisiko tidak pernah aktif tanpa opt-in user
+
+**Implementasi:** CPE mapping kini menjelaskan hasil/skipped mapping dan temuan NVD ditandai
+metadata-only dengan prioritas KEV + EPSS + CVSS. `temu rules validate` dan `rules simulate`
+menjadi gate lokal; probe time-based otomatis membutuhkan opt-in. Workflow `temu-rules`
+menghasilkan descriptor kandidat non-eksekutabel di `staging/candidates/recent.yaml` melalui PR,
+bukan memasukkannya otomatis ke manifest aktif.
 
 ---
 

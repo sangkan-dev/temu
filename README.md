@@ -137,6 +137,11 @@ cargo run -p cli -- cve update
 cargo run -p cli -- cve update --cpe cpe:2.3:a:nginx:nginx:1.18.0:*:*:*:*:*:*:*
 ```
 
+CVE findings produced from NVD/CISA/FIRST EPSS are marked `[Metadata only]`.
+They explain the fingerprint-to-CPE mapping and priority score, but do not claim
+that a vulnerability was actively proven. Active confirmation comes from reviewed
+detection rules.
+
 Update local detection rules and dictionaries from a rules-as-code repository:
 
 ```bash
@@ -146,6 +151,20 @@ cargo run -p cli -- rules update \
 ./temu-linux-x86_64-static rules update \
   --repo-url https://raw.githubusercontent.com/sangkan-dev/temu-rules/main
 ```
+
+Validate active rules or exercise them against an authorized fixture:
+
+```bash
+cargo run -p cli -- rules validate --rules-dir ./rules
+cargo run -p cli -- rules simulate --rules-dir ./rules \
+  --target-fixture http://127.0.0.1:3000/
+```
+
+`rules validate` reports effective risk and a confidence score, rejects duplicate
+IDs, invalid regexes, excessive timing thresholds, and destructive payloads without
+explicit risk/confirmation declarations. `rules simulate` executes only validated
+rules; risky or time-based probes remain disabled unless `--allow-risky-rules` is
+provided.
 
 Discovery modes:
 
@@ -223,7 +242,7 @@ Temu can keep first-party rules in this repository and consume an external rules
 }
 ```
 
-The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD snapshots, and dictionary sources, promotes low-risk fingerprint and dictionary updates into active files, validates the repository, and opens a pull request. Rules that are intrusive, destructive, or DoS-prone can still be published, but they must declare `risk_level` or `requires_confirmation` so Temu only executes them after explicit user opt-in.
+The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD/CISA/Exploit-DB snapshots, and dictionary sources; NVD records become non-executable candidate descriptors under `staging/candidates/` in the generated PR. Only reviewed rules are added to the active manifest. Rules that are intrusive, destructive, or DoS-prone can still be published, but they must declare `risk_level` or `requires_confirmation` so Temu only executes them after explicit user opt-in.
 
 See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
 

@@ -2,12 +2,34 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use fingerprint::TechStack;
+use serde::{Deserialize, Serialize};
+
+/// Why a fingerprinted technology could or could not be queried through CPE.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicabilityStatus {
+    Applicable,
+    MissingVersion,
+    UnknownProductMapping,
+}
+
+/// Explainable mapping between a detected technology and its NVD CPE query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpeApplicability {
+    pub technology: String,
+    pub detected_version: Option<String>,
+    pub confidence: f32,
+    pub status: ApplicabilityStatus,
+    pub cpe: Option<String>,
+    pub reason: String,
+}
 
 static CPE_MAP: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
     LazyLock::new(|| {
         HashMap::from([
             ("nginx", ("f5", "nginx")),
             ("apache", ("apache", "http_server")),
+            ("apache httpd", ("apache", "http_server")),
             ("apache http server", ("apache", "http_server")),
             ("php", ("php", "php")),
             ("wordpress", ("wordpress", "wordpress")),
@@ -20,15 +42,18 @@ static CPE_MAP: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
             ("vue.js", ("vuejs", "vue.js")),
             ("angular", ("angular", "angular")),
             ("node.js", ("nodejs", "node.js")),
+            ("nodejs", ("nodejs", "node.js")),
             ("express", ("expressjs", "express")),
             ("django", ("djangoproject", "django")),
             ("ruby on rails", ("rubyonrails", "rails")),
             ("spring", ("vmware", "spring_framework")),
+            ("spring framework", ("vmware", "spring_framework")),
             ("tomcat", ("apache", "tomcat")),
             ("openssl", ("openssl", "openssl")),
             ("mysql", ("oracle", "mysql")),
             ("mariadb", ("mariadb", "mariadb")),
             ("postgresql", ("postgresql", "postgresql")),
+            ("postgres", ("postgresql", "postgresql")),
             ("redis", ("redis", "redis")),
             ("elasticsearch", ("elastic", "elasticsearch")),
             ("kibana", ("elastic", "kibana")),
@@ -63,18 +88,60 @@ static CPE_MAP: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
 
 /// Builds a CPE 2.3 name from a detected technology and version.
 pub fn build_cpe(tech: &TechStack) -> Option<String> {
-    let version = tech.version.as_deref()?;
-    if version.trim().is_empty() {
-        return None;
-    }
+    explain_cpe_applicability(tech).cpe
+}
 
-    let key = tech.name.to_lowercase();
-    let (vendor, product) = CPE_MAP.get(key.as_str())?;
+/// Maps a fingerprint to CPE and provides an audit-friendly applicability reason.
+pub fn explain_cpe_applicability(tech: &TechStack) -> CpeApplicability {
+    let version = tech
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let Some(version) = version else {
+        return CpeApplicability {
+            technology: tech.name.clone(),
+            detected_version: tech.version.clone(),
+            confidence: tech.confidence,
+            status: ApplicabilityStatus::MissingVersion,
+            cpe: None,
+            reason: format!(
+                "{} was detected, but no version was observed; NVD CPE applicability cannot be established",
+                tech.name
+            ),
+        };
+    };
 
-    Some(format!(
+    let key = tech.name.to_ascii_lowercase();
+    let Some((vendor, product)) = CPE_MAP.get(key.as_str()) else {
+        return CpeApplicability {
+            technology: tech.name.clone(),
+            detected_version: Some(version.to_string()),
+            confidence: tech.confidence,
+            status: ApplicabilityStatus::UnknownProductMapping,
+            cpe: None,
+            reason: format!(
+                "{} {} was detected, but no CPE alias is configured for this product",
+                tech.name, version
+            ),
+        };
+    };
+
+    let cpe = format!(
         "cpe:2.3:a:{vendor}:{product}:{}:*:*:*:*:*:*:*",
         sanitize_version(version)
-    ))
+    );
+    CpeApplicability {
+        technology: tech.name.clone(),
+        detected_version: Some(version.to_string()),
+        confidence: tech.confidence,
+        status: ApplicabilityStatus::Applicable,
+        cpe: Some(cpe.clone()),
+        reason: format!(
+            "{} {} fingerprint (confidence {:.2}) maps to CPE {cpe}",
+            tech.name, version, tech.confidence
+        ),
+    }
 }
 
 fn sanitize_version(version: &str) -> String {
@@ -119,5 +186,18 @@ mod tests {
     fn test_build_cpe_requires_version_and_known_mapping() {
         assert!(build_cpe(&tech("nginx", None)).is_none());
         assert!(build_cpe(&tech("UnknownThing", Some("1.0"))).is_none());
+    }
+
+    #[test]
+    fn test_explain_cpe_applicability_supports_aliases_and_failures() {
+        let applicable = explain_cpe_applicability(&tech("Apache httpd", Some("2.4.51")));
+        assert_eq!(applicable.status, ApplicabilityStatus::Applicable);
+        assert!(applicable.reason.contains("maps to CPE"));
+
+        let missing = explain_cpe_applicability(&tech("nginx", None));
+        assert_eq!(missing.status, ApplicabilityStatus::MissingVersion);
+
+        let unknown = explain_cpe_applicability(&tech("UnknownThing", Some("1.0")));
+        assert_eq!(unknown.status, ApplicabilityStatus::UnknownProductMapping);
     }
 }
