@@ -14,6 +14,7 @@ chrono = { workspace = true }
 tera = { workspace = true }
 printpdf = { workspace = true }
 regex = { workspace = true }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

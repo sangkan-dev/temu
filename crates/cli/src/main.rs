@@ -16,7 +16,10 @@ use args::{
 use clap::Parser;
 use cli::rules_update;
 use discovery::{DiscoveryMode, default_top_ports, parse_ports};
-use reporter::{ScanResult, generate_html, generate_json, generate_pdf};
+use reporter::{
+    ScanResult, generate_graph_cache, generate_graph_json, generate_html, generate_json,
+    generate_pdf,
+};
 use temu_core::init_logging;
 
 #[tokio::main]
@@ -485,7 +488,11 @@ fn write_report_set(
         generate_html(result, output_dir).with_context(|| "Failed to write HTML report")?;
     let pdf_path =
         generate_pdf(result, output_dir).with_context(|| "Failed to write PDF report")?;
-    Ok(vec![json_path, html_path, pdf_path])
+    let graph_path = generate_graph_json(result, output_dir)
+        .with_context(|| "Failed to write asset graph JSON")?;
+    let _cache_path = generate_graph_cache(result, output_dir)
+        .with_context(|| "Failed to write asset graph cache")?;
+    Ok(vec![json_path, html_path, pdf_path, graph_path])
 }
 
 fn print_report_paths(paths: &[std::path::PathBuf]) {

@@ -72,6 +72,10 @@ fn build_templates() -> Result<Tera, TemuError> {
             include_str!("../../../templates/partials/callback_events.html"),
         ),
         (
+            "partials/asset_graph.html",
+            include_str!("../../../templates/partials/asset_graph.html"),
+        ),
+        (
             "partials/footer.html",
             include_str!("../../../templates/partials/footer.html"),
         ),
@@ -104,6 +108,7 @@ struct ReportView {
     assets: Vec<Asset>,
     tech_groups: Vec<TechGroupView>,
     callback_events: Vec<CallbackEventView>,
+    graph: GraphSummaryView,
 }
 
 impl ReportView {
@@ -114,6 +119,7 @@ impl ReportView {
             .map(VulnerabilityView::from_vulnerability)
             .collect::<Vec<_>>();
         let severity_counts = severity_counts(&result.vulnerabilities);
+        let graph = crate::graph::build_asset_graph(result);
 
         Self {
             target: result.target.clone(),
@@ -144,6 +150,105 @@ impl ReportView {
                 .iter()
                 .map(CallbackEventView::from_event)
                 .collect(),
+            graph: GraphSummaryView::from_graph(&graph),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GraphSummaryView {
+    nodes_total: usize,
+    edges_total: usize,
+    deduped_findings: Vec<GraphFindingView>,
+    attack_path_hints: Vec<GraphHintView>,
+    top_remediation_actions: Vec<GraphActionView>,
+}
+
+impl GraphSummaryView {
+    fn from_graph(graph: &crate::graph::AssetGraph) -> Self {
+        Self {
+            nodes_total: graph.nodes.len(),
+            edges_total: graph.edges.len(),
+            deduped_findings: graph
+                .deduped_findings
+                .iter()
+                .take(10)
+                .map(GraphFindingView::from_finding)
+                .collect(),
+            attack_path_hints: graph
+                .attack_path_hints
+                .iter()
+                .map(GraphHintView::from_hint)
+                .collect(),
+            top_remediation_actions: graph
+                .top_remediation_actions
+                .iter()
+                .map(GraphActionView::from_action)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GraphFindingView {
+    rule_id: String,
+    name: String,
+    severity: String,
+    severity_class: String,
+    representative_url: String,
+    occurrences: usize,
+    risk_score: String,
+}
+
+impl GraphFindingView {
+    fn from_finding(finding: &crate::graph::DedupedFinding) -> Self {
+        let severity = finding.severity.to_string();
+        Self {
+            rule_id: finding.rule_id.clone(),
+            name: finding.name.clone(),
+            severity_class: severity.to_lowercase(),
+            severity,
+            representative_url: finding.representative_url.clone(),
+            occurrences: finding.occurrences,
+            risk_score: format!("{:.1}", finding.risk_score),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GraphHintView {
+    title: String,
+    score: String,
+    evidence: Vec<String>,
+}
+
+impl GraphHintView {
+    fn from_hint(hint: &crate::graph::AttackPathHint) -> Self {
+        Self {
+            title: hint.title.clone(),
+            score: format!("{:.1}", hint.score),
+            evidence: hint.evidence.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GraphActionView {
+    title: String,
+    risk_score: String,
+    affected_findings: usize,
+    affected_assets: usize,
+    remediation: String,
+}
+
+impl GraphActionView {
+    fn from_action(action: &crate::graph::RemediationAction) -> Self {
+        Self {
+            title: action.title.clone(),
+            risk_score: format!("{:.1}", action.risk_score),
+            affected_findings: action.affected_findings,
+            affected_assets: action.affected_assets,
+            remediation: action.remediation.clone(),
         }
     }
 }

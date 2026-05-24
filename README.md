@@ -217,8 +217,9 @@ JSON, HTML, and PDF output are written.
 Each completed scan writes:
 
 - JSON: machine-readable source of truth.
-- HTML: analyst-friendly report with summary, target table, findings, OAST callback timeline, assets, and tech stack.
+- HTML: analyst-friendly report with summary, target table, asset graph priorities, findings, OAST callback timeline, assets, and tech stack.
 - PDF: executive report with cover page, risk overview, vulnerability detail, and recommendations.
+- Asset graph JSON: relationship graph with deduplicated findings, attack path hints, and top remediation actions.
 
 Multi-target scans write one report set per target and one aggregate report. Aggregate reports include target summaries sorted by vulnerability count.
 

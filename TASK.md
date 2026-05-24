@@ -1468,20 +1468,28 @@ dan trust boundary jelas.
 **Goal:** Ubah hasil scan dari list panjang menjadi graph risiko yang membantu assessor menentukan prioritas.
 
 ### 29.1 Asset Graph
-- [ ] 🔴 Model graph untuk domain, subdomain, IP, port, service, tech, endpoint, CVE, finding
-- [ ] 🔴 Deduplicate finding lintas URL/service yang punya root cause sama
-- [ ] 🟡 Simpan graph ke JSON artifact dan SQLite cache
-- [ ] 🟡 Visualisasi graph di HTML/frontend
+- [x] 🔴 Model graph untuk domain, subdomain, IP, port, service, tech, endpoint, CVE, finding
+- [x] 🔴 Deduplicate finding lintas URL/service yang punya root cause sama
+- [x] 🟡 Simpan graph ke JSON artifact dan SQLite cache
+- [x] 🟡 Visualisasi graph di HTML/frontend
 
 ### 29.2 Risk Scoring
-- [ ] 🔴 Hitung score gabungan dari severity, exploitability, exposure, auth requirement, KEV/EPSS
-- [ ] 🟡 Attack path hints: exposed admin panel + weak headers + known CVE + public service
-- [ ] 🟡 Report top 10 remediation actions berbasis impact
+- [x] 🔴 Hitung score gabungan dari severity, exploitability, exposure, auth requirement, KEV/EPSS
+- [x] 🟡 Attack path hints: exposed admin panel + weak headers + known CVE + public service
+- [x] 🟡 Report top 10 remediation actions berbasis impact
 
 ### 🏁 Sprint 29 — Definition of Done
 - Report tidak hanya menampilkan jumlah finding, tapi prioritas tindakan
 - Duplicate/noisy findings berkurang
 - Asset relationship bisa ditelusuri dari report
+
+**Implementasi:** Reporter sekarang membangun asset graph dari `ScanResult` dengan node domain,
+subdomain, IP, port, service, technology, endpoint, CVE, dan finding. Findings dideduplikasi
+berdasarkan root-cause key, diberi risk score gabungan severity/CVSS/verifikasi/CVE/KEV/EPSS,
+dan diringkas menjadi top 10 remediation actions. Setiap report set menulis artifact
+`*_graph.json`, menyimpan graph terakhir ke SQLite cache `results/.cache/asset_graph.sqlite`,
+dan HTML report menampilkan metrik graph, attack path hints, remediation priority, serta
+deduplicated findings.
 
 ---
 
