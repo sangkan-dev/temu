@@ -107,7 +107,7 @@ metadata:
   author: "sangkan-dev"
   license: "MIT"
 compatibility:
-  minimum_temu_version: "1.4.0"
+  minimum_temu_version: "1.5.0"
   required_capabilities: ["network_service"]
 protocols: ["redis"]
 products: ["Redis"]

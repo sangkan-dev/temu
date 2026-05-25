@@ -394,7 +394,7 @@ fn protocol_probe(port: u16) -> &'static [u8] {
         21 => b"FEAT\r\n",
         25 | 465 | 587 => b"EHLO temu.local\r\n",
         80 | 81 | 443 | 3000 | 8000 | 8008 | 8080 | 8081 | 8443 | 8888 | 9200 | 15672 => {
-            b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.4.0\r\n\r\n"
+            b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.5.0\r\n\r\n"
         }
         110 | 995 => b"CAPA\r\n",
         143 | 993 => b"a001 CAPABILITY\r\n",
@@ -408,7 +408,7 @@ fn protocol_probe(port: u16) -> &'static [u8] {
         5671 | 5672 => b"AMQP\x00\x00\x09\x01",
         6379 => b"*1\r\n$4\r\nPING\r\n",
         11211 => b"version\r\n",
-        _ => b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.4.0\r\n\r\n",
+        _ => b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.5.0\r\n\r\n",
     }
 }
 

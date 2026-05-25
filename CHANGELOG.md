@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] — 2026-05-25
+
+Feature release expanding Temu into protocol-aware network service assessment.
+
+### Added
+
+- Protocol-aware TCP profiling for SSH, mail, database, broker, cache, remote-management, and HTTP-family services, including services observed on non-standard ports.
+- Structured network service evidence with protocol, product/version, confidence, sanitized handshake, authentication signal, and TLS response metadata.
+- Separate `rule_type: network` schema and safe evidence matchers for service checks, with bundled Redis unauthenticated-access and Memcached exposure rules.
+- Per-host network connection and time budgets to bound protocol enumeration activity.
+
+### Changed
+
+- JSON, HTML, and PDF reports now include service evidence, with banner and handshake content redacted for shareable artifacts.
+- Network scans can produce verified service findings without routing TCP checks through the HTTP vulnerability executor.
+
 ## [1.4.0] — 2026-05-24
 
 Feature release for advanced discovery, rule extensibility, and repeatable audit workflows.

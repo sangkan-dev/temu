@@ -61,7 +61,7 @@ pub async fn update_rules_from_repo(
     dictionaries_dir: &Path,
 ) -> anyhow::Result<RulesUpdateSummary> {
     let client = reqwest::Client::builder()
-        .user_agent("Temu/1.4.0 rules-updater")
+        .user_agent("Temu/1.5.0 rules-updater")
         .build()
         .with_context(|| "Failed to build rules update HTTP client")?;
 

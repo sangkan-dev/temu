@@ -25,7 +25,7 @@ pub async fn fetch_epss_scores_with_base(
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
-        .user_agent("Temu/1.4.0")
+        .user_agent("Temu/1.5.0")
         .build()
         .map_err(TemuError::from_network)?;
     let response = client
