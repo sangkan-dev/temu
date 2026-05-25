@@ -11,10 +11,10 @@ use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
 use hickory_resolver::TokioResolver;
 use reporter::types::{CallbackEvent, ScanResult, ScanStats, TargetSummary};
-use temu_core::{AppConfig, Asset, AssetType, Severity, Target, Vulnerability};
+use temu_core::{AppConfig, Asset, AssetType, ServiceEvidence, Severity, Target, Vulnerability};
 use tracing::info;
 use verifier::run_verification;
-use vulnerability::run_vulnerability_scan;
+use vulnerability::{run_network_service_checks, run_vulnerability_scan};
 
 use crate::collaborator::load_callback_events;
 use crate::stateful::run_stateful_dast;
@@ -31,6 +31,14 @@ pub struct MultiTargetScanResult {
 #[derive(Debug, Default)]
 struct ErrorSummary {
     errors: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct ServiceReportItems {
+    assets: Vec<Asset>,
+    techs: Vec<(String, TechStack)>,
+    web_urls: Vec<String>,
+    services: Vec<ServiceEvidence>,
 }
 
 impl ErrorSummary {
@@ -115,7 +123,8 @@ pub async fn run_scan_with_ports(
     info!("Discovery complete: {} assets", discovered.len());
 
     // ── 1b. Port scan ───────────────────────────────────────────────────────
-    let (service_assets, service_techs) = run_port_scan_for_domain(&domain, ports, config).await;
+    let (service_assets, service_techs, service_evidence) =
+        run_port_scan_for_domain(&domain, ports, config).await;
     eprintln!(
         "[+] Port scan: found {} open services",
         service_assets.len()
@@ -271,6 +280,13 @@ pub async fn run_scan_with_ports(
             }
         };
     detected_vulnerabilities.extend(stateful_result.findings.clone());
+    match run_network_service_checks(&service_evidence, config) {
+        Ok(network_findings) => detected_vulnerabilities.extend(network_findings),
+        Err(e) => {
+            error_summary.push("network_rules", &e);
+            tracing::warn!("Network rule scan error (continuing): {e}");
+        }
+    }
     match cve_client::check_cves(&all_techs, config).await {
         Ok(cve_vulnerabilities) => {
             if !cve_vulnerabilities.is_empty() {
@@ -324,6 +340,7 @@ pub async fn run_scan_with_ports(
         assets: all_discovered,
         tech_stacks,
         vulnerabilities,
+        services: service_evidence,
         target_summaries: vec![],
         callback_events,
         scan_started_at: started_at,
@@ -503,8 +520,16 @@ pub async fn run_network_scan_multi(
     for (index, ip) in ips.iter().enumerate() {
         eprintln!("Scanning target {}/{}: {ip}", index + 1, ips.len());
         let port_results = scan_ports(IpAddr::V4(*ip), ports, config).await;
-        let (service_assets, service_techs, web_urls) =
-            report_items_from_port_results(IpAddr::V4(*ip), &port_results);
+        let ServiceReportItems {
+            assets: service_assets,
+            techs: service_techs,
+            web_urls,
+            services,
+        } = report_items_from_port_results(IpAddr::V4(*ip), &port_results);
+        let network_findings = run_network_service_checks(&services, config).unwrap_or_else(|e| {
+            tracing::warn!("Network rule scan error for {ip}: {e}");
+            Vec::new()
+        });
 
         if web_urls.is_empty() {
             if !service_assets.is_empty() {
@@ -512,6 +537,8 @@ pub async fn run_network_scan_multi(
                     &ip.to_string(),
                     service_assets,
                     service_techs,
+                    services,
+                    network_findings,
                     started_at,
                 ));
             }
@@ -522,6 +549,9 @@ pub async fn run_network_scan_multi(
             match run_scan_with_ports(&web_url, config, DiscoveryMode::PassiveOnly, &[]).await {
                 Ok(mut result) => {
                     result.assets.extend(service_assets.clone());
+                    result.services.extend(services.clone());
+                    result.vulnerabilities.extend(network_findings.clone());
+                    result.stats.vulns_found = result.vulnerabilities.len() as u32;
                     for (service_url, tech) in &service_techs {
                         result
                             .tech_stacks
@@ -538,6 +568,8 @@ pub async fn run_network_scan_multi(
                         &web_url,
                         service_assets.clone(),
                         service_techs.clone(),
+                        services.clone(),
+                        network_findings.clone(),
                         started_at,
                     ));
                 }
@@ -564,21 +596,21 @@ async fn run_port_scan_for_domain(
     domain: &str,
     ports: &[u16],
     config: &AppConfig,
-) -> (Vec<Asset>, Vec<(String, TechStack)>) {
+) -> (Vec<Asset>, Vec<(String, TechStack)>, Vec<ServiceEvidence>) {
     let Ok(builder) = TokioResolver::builder_tokio() else {
         tracing::warn!("Port scan skipped: could not initialize DNS resolver for {domain}");
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Ok(resolver) = builder.build() else {
         tracing::warn!("Port scan skipped: could not build DNS resolver for {domain}");
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Ok(response) = resolver.lookup_ip(domain).await else {
         tracing::warn!("Port scan skipped: could not resolve {domain}");
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Some(ip) = response.iter().next() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
 
     run_port_scan_for_ip(ip, ports, config).await
@@ -588,37 +620,39 @@ async fn run_port_scan_for_ip(
     ip: IpAddr,
     ports: &[u16],
     config: &AppConfig,
-) -> (Vec<Asset>, Vec<(String, TechStack)>) {
+) -> (Vec<Asset>, Vec<(String, TechStack)>, Vec<ServiceEvidence>) {
     let results = scan_ports(ip, ports, config).await;
-    let (assets, techs, _) = report_items_from_port_results(ip, &results);
-    (assets, techs)
+    let items = report_items_from_port_results(ip, &results);
+    (items.assets, items.techs, items.services)
 }
 
-fn report_items_from_port_results(
-    ip: IpAddr,
-    results: &[PortResult],
-) -> (Vec<Asset>, Vec<(String, TechStack)>, Vec<String>) {
-    let mut assets = Vec::new();
-    let mut techs = Vec::new();
-    let mut web_urls = Vec::new();
+fn report_items_from_port_results(ip: IpAddr, results: &[PortResult]) -> ServiceReportItems {
+    let mut items = ServiceReportItems::default();
     for result in results {
         let service = result.service.as_deref().unwrap_or("unknown");
-        let banner = result.banner.as_deref().unwrap_or("");
         let service_url = format!("tcp://{ip}:{}", result.port);
-        if let Some(tech) = tech_from_banner(service, banner) {
-            techs.push((service_url.clone(), tech));
+        if let Some(tech) = tech_from_service(result) {
+            items.techs.push((service_url.clone(), tech));
         }
         if let Some(web_url) = web_url_for_service(ip, result.port, service) {
-            web_urls.push(web_url);
+            items.web_urls.push(web_url);
         }
-        assets.push(Asset::new(
-            format!("{service_url} ({service}) {banner}"),
+        items.assets.push(Asset::new(
+            format!(
+                "{service_url} ({service}) product={} version={} confidence={:.2}",
+                result.product.as_deref().unwrap_or("unknown"),
+                result.version.as_deref().unwrap_or("unknown"),
+                result.confidence
+            ),
             AssetType::Service,
             "discovery::port_scan",
         ));
+        if let Some(evidence) = result.to_service_evidence(ip) {
+            items.services.push(evidence);
+        }
     }
 
-    (assets, techs, web_urls)
+    items
 }
 
 fn web_url_for_service(ip: IpAddr, port: u16, service: &str) -> Option<String> {
@@ -648,6 +682,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
     let mut assets = Vec::new();
     let mut tech_stacks: HashMap<String, Vec<TechStack>> = HashMap::new();
     let mut vulnerabilities = Vec::new();
+    let mut services = Vec::new();
     let mut callback_events = Vec::new();
     let mut target_summaries = Vec::new();
     let mut stats = ScanStats {
@@ -661,6 +696,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
     for result in results {
         assets.extend(result.assets.clone());
         vulnerabilities.extend(result.vulnerabilities.clone());
+        services.extend(result.services.clone());
         callback_events.extend(result.callback_events.clone());
         for (url, techs) in &result.tech_stacks {
             tech_stacks
@@ -692,6 +728,7 @@ pub fn aggregate_scan_results(target: &str, results: &[ScanResult]) -> ScanResul
         assets,
         tech_stacks,
         vulnerabilities,
+        services,
         target_summaries,
         callback_events,
         scan_started_at,
@@ -704,6 +741,8 @@ fn service_only_scan_result(
     target: &str,
     assets: Vec<Asset>,
     service_techs: Vec<(String, TechStack)>,
+    services: Vec<ServiceEvidence>,
+    vulnerabilities: Vec<Vulnerability>,
     started_at: chrono::DateTime<Utc>,
 ) -> ScanResult {
     let finished_at = Utc::now();
@@ -716,18 +755,19 @@ fn service_only_scan_result(
         target: target.to_string(),
         assets,
         tech_stacks,
-        vulnerabilities: Vec::new(),
-        target_summaries: Vec::new(),
-        callback_events: Vec::new(),
-        scan_started_at: started_at,
-        scan_finished_at: finished_at,
         stats: ScanStats {
             subdomains_found: 0,
             paths_found: 0,
             parameters_found: 0,
-            vulns_found: 0,
+            vulns_found: vulnerabilities.len() as u32,
             duration_secs: (finished_at - started_at).num_milliseconds() as f64 / 1000.0,
         },
+        vulnerabilities,
+        services,
+        target_summaries: Vec::new(),
+        callback_events: Vec::new(),
+        scan_started_at: started_at,
+        scan_finished_at: finished_at,
     }
 }
 
@@ -768,18 +808,19 @@ fn expand_ipv4_cidr(cidr: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
         .collect())
 }
 
-fn tech_from_banner(service: &str, banner: &str) -> Option<TechStack> {
-    if service == "ssh" && banner.to_ascii_lowercase().contains("openssh") {
-        let version = banner
-            .split("OpenSSH_")
-            .nth(1)
-            .and_then(|rest| rest.split([' ', '\r', '\n']).next())
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        Some(TechStack::new("OpenSSH", version, 0.80, TechCategory::OS))
-    } else {
-        None
-    }
+fn tech_from_service(service: &PortResult) -> Option<TechStack> {
+    let name = service.product.clone()?;
+    let category = match service.service.as_deref() {
+        Some("mysql" | "postgresql" | "mssql" | "redis" | "mongodb") => TechCategory::Database,
+        Some("ssh" | "rdp" | "smb") => TechCategory::OS,
+        _ => TechCategory::Other,
+    };
+    Some(TechStack::new(
+        name,
+        service.version.clone(),
+        service.confidence,
+        category,
+    ))
 }
 
 #[cfg(test)]
@@ -806,8 +847,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tech_from_ssh_banner() {
-        let tech = tech_from_banner("ssh", "SSH-2.0-OpenSSH_9.0").unwrap();
+    fn test_tech_from_ssh_service_evidence() {
+        let tech = tech_from_service(&PortResult {
+            port: 22,
+            state: discovery::PortState::Open,
+            service: Some("ssh".to_string()),
+            product: Some("OpenSSH".to_string()),
+            version: Some("9.0".to_string()),
+            confidence: 0.99,
+            banner: Some("SSH-2.0-OpenSSH_9.0".to_string()),
+            handshake: None,
+            auth_required: None,
+            tls: None,
+        })
+        .unwrap();
         assert_eq!(tech.name, "OpenSSH");
         assert_eq!(tech.version.as_deref(), Some("9.0"));
         assert!(matches!(tech.category, TechCategory::OS));
@@ -921,6 +974,7 @@ mod tests {
                 duration_secs: 1.0,
             },
             vulnerabilities,
+            services: Vec::new(),
             target_summaries: Vec::new(),
             callback_events: Vec::new(),
             scan_started_at: started_at,

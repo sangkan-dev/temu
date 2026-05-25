@@ -1,0 +1,22 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-MEMCACHED-EXPOSED"
+name: "Memcached responds to unauthenticated protocol query"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-05-25"
+compatibility:
+  minimum_temu_version: "1.4.0"
+  required_capabilities: ["network_service"]
+protocols: ["memcached"]
+products: ["Memcached"]
+severity: high
+cvss: 7.5
+risk_level: safe
+requires_confirmation: false
+matcher:
+  protocol_response_regex: "(?i)^VERSION\\s+"
+remediation: "Restrict Memcached to trusted hosts and disable exposure on untrusted interfaces."
+references:
+  - "https://github.com/memcached/memcached/wiki/SASLHowto"

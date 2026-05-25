@@ -30,6 +30,8 @@ fn make_config(dictionaries_dir: PathBuf, rules_dir: PathBuf, output_dir: PathBu
         oast_correlation_id: None,
         oast_database_path: None,
         oast_wait_secs: 0,
+        network_connection_budget: 128,
+        network_time_budget_secs: 30,
     }
 }
 
@@ -213,6 +215,7 @@ fn test_scan_result_json_roundtrip() {
         assets: vec![Asset::new("https://example.com", AssetType::Url, "test")],
         tech_stacks: HashMap::new(),
         vulnerabilities: vec![],
+        services: vec![],
         target_summaries: vec![],
         callback_events: vec![],
         scan_started_at: Utc::now(),
@@ -312,6 +315,7 @@ fn test_benchmark_100_url_aggregation_records_time_and_size() {
             )],
             tech_stacks: HashMap::new(),
             vulnerabilities: Vec::new(),
+            services: Vec::new(),
             target_summaries: Vec::new(),
             callback_events: Vec::new(),
             scan_started_at,
@@ -354,6 +358,7 @@ fn test_benchmark_10k_url_aggregation_stays_fast() {
             )],
             tech_stacks: HashMap::new(),
             vulnerabilities: Vec::new(),
+            services: Vec::new(),
             target_summaries: Vec::new(),
             callback_events: Vec::new(),
             scan_started_at,

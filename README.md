@@ -10,7 +10,7 @@ Temu runs as a CLI and writes all scan output locally. It does not send scan res
 
 - Single-target web scan pipeline: discovery, fingerprinting, fuzzing, vulnerability detection, verification, reporting.
 - Multi-target scan from a file list.
-- IPv4 CIDR scan with TCP port scanning and banner collection.
+- IPv4 CIDR scan with protocol-aware TCP service profiling, TLS observation, and network-service rules.
 - Distributed scanning with Redis-backed workers.
 - CVE lookup from NVD/CISA KEV with SQLite cache.
 - YAML vulnerability rules with explicit risk levels.
@@ -127,6 +127,20 @@ Network scan:
 ```bash
 cargo run -p cli -- scan network --cidr 192.168.1.0/24 --ports 80,443,8080
 ```
+
+Network scans collect read-only evidence for SSH, FTP, mail protocols, databases,
+caches, brokers, remote-management protocols, and HTTP services even when they
+run on non-default ports. JSON, HTML, and PDF reports include the observed protocol,
+product/version, confidence, sanitized handshake, authentication signal, and
+TLS record metadata. The default safety budgets are configurable:
+
+```toml
+network_connection_budget = 256
+network_time_budget_secs = 30
+```
+
+Use `TEMU_NETWORK_CONNECTION_BUDGET` and `TEMU_NETWORK_TIME_BUDGET_SECS` to
+override those limits for an authorized network assessment.
 
 Distributed scan:
 
@@ -327,6 +341,7 @@ Temu can keep first-party rules in this repository and consume an external rules
 The cron workflow should live in `sangkan-dev/temu-rules`, not in the engine repository. It refreshes upstream Wappalyzer, FingerprintHub, NVD/CISA/Exploit-DB snapshots, and dictionary sources; NVD records become non-executable candidate descriptors under `staging/candidates/` in the generated PR. Only reviewed rules are added to the active manifest. Rules that are intrusive, destructive, or DoS-prone can still be published, but they must declare `risk_level` or `requires_confirmation` so Temu only executes them after explicit user opt-in.
 
 See [docs/rules-repository.md](docs/rules-repository.md) for the recommended repository layout and workflow split.
+See [docs/rule-authoring.md](docs/rule-authoring.md) for the separate read-only `rule_type: network` schema.
 See [docs/enterprise-workflows.md](docs/enterprise-workflows.md) for profiles, baseline diff, suppressions, SARIF, Markdown, and webhook usage.
 
 ## Rule Safety

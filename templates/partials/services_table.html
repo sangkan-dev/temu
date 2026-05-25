@@ -1,0 +1,31 @@
+{% if services | length > 0 %}
+<section>
+  <h2>Network Services</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Endpoint</th>
+        <th>Protocol / Product</th>
+        <th>Version</th>
+        <th>Confidence</th>
+        <th>TLS</th>
+        <th>Auth Required</th>
+        <th>Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for service in services %}
+      <tr>
+        <td>{{ service.endpoint }}</td>
+        <td><strong>{{ service.protocol }}</strong><br><span class="subtle">{{ service.product }}</span></td>
+        <td>{{ service.version }}</td>
+        <td>{{ service.confidence }}</td>
+        <td>{{ service.tls }}</td>
+        <td>{{ service.auth_required }}</td>
+        <td>{{ service.evidence }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

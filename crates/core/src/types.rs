@@ -91,6 +91,42 @@ impl Asset {
     }
 }
 
+/// TLS record evidence observed on a reachable TCP service.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TlsEvidence {
+    /// Whether a server responded to a TLS ClientHello with a TLS record.
+    pub detected: bool,
+    /// TLS record or negotiated protocol version when observable.
+    pub protocol_version: Option<String>,
+    /// ServerHello cipher suite identifier when observable.
+    pub cipher_suite: Option<String>,
+}
+
+/// Passive or read-only protocol evidence collected from one reachable service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceEvidence {
+    /// TCP endpoint formatted as `tcp://address:port`.
+    pub endpoint: String,
+    /// Port on which this service was observed.
+    pub port: u16,
+    /// Identified application protocol, or `unknown`.
+    pub protocol: String,
+    /// Identified product name when the greeting exposes one.
+    pub product: Option<String>,
+    /// Identified product version when the greeting exposes one.
+    pub version: Option<String>,
+    /// Confidence score between 0.0 and 1.0.
+    pub confidence: f32,
+    /// Sanitized greeting/banner returned by the service.
+    pub banner: Option<String>,
+    /// Sanitized response or handshake evidence used for matching.
+    pub handshake: Option<String>,
+    /// Whether an authentication-required response was observed.
+    pub auth_required: Option<bool>,
+    /// TLS handshake metadata if TLS was accepted on this port.
+    pub tls: Option<TlsEvidence>,
+}
+
 /// CVSS-aligned severity classification.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -211,6 +247,32 @@ mod tests {
         assert_eq!(decoded.url, "https://example.com/admin");
         assert_eq!(decoded.asset_type, AssetType::Path);
         assert_eq!(decoded.discovered_by, "fuzzing");
+    }
+
+    #[test]
+    fn test_service_evidence_serialize_deserialize() {
+        let evidence = ServiceEvidence {
+            endpoint: "tcp://127.0.0.1:6379".to_string(),
+            port: 6379,
+            protocol: "redis".to_string(),
+            product: Some("Redis".to_string()),
+            version: None,
+            confidence: 0.98,
+            banner: Some("+PONG".to_string()),
+            handshake: Some("PING response: +PONG".to_string()),
+            auth_required: Some(false),
+            tls: Some(TlsEvidence {
+                detected: true,
+                protocol_version: Some("TLS 1.3".to_string()),
+                cipher_suite: None,
+            }),
+        };
+
+        let json = serde_json::to_string(&evidence).expect("serialization failed");
+        let decoded: ServiceEvidence = serde_json::from_str(&json).expect("deserialization failed");
+        assert_eq!(decoded.protocol, "redis");
+        assert_eq!(decoded.auth_required, Some(false));
+        assert!(decoded.tls.is_some_and(|tls| tls.detected));
     }
 
     #[test]

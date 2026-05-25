@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use fingerprint::TechStack;
 use serde::{Deserialize, Serialize};
-use temu_core::{Asset, Severity, Vulnerability};
+use temu_core::{Asset, ServiceEvidence, Severity, Vulnerability};
 
 /// Complete output of one scan run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,9 @@ pub struct ScanResult {
     pub tech_stacks: HashMap<String, Vec<TechStack>>,
     /// All confirmed vulnerabilities.
     pub vulnerabilities: Vec<Vulnerability>,
+    /// Protocol-aware evidence collected from reachable TCP services.
+    #[serde(default)]
+    pub services: Vec<ServiceEvidence>,
     /// Per-target summaries for aggregate multi-target reports.
     #[serde(default)]
     pub target_summaries: Vec<TargetSummary>,

@@ -12,6 +12,8 @@ browser_crawl_max_pages = 25
 browser_crawl_max_depth = 2
 browser_crawl_render_js = false
 oast_wait_secs = 0
+network_connection_budget = 256
+network_time_budget_secs = 30
 
 # Optional OAST/collaborator settings. OAST probes are disabled unless a scan
 # supplies a callback URL and risky rules are explicitly enabled.

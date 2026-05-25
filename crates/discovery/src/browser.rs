@@ -574,6 +574,8 @@ mod tests {
             oast_correlation_id: None,
             oast_database_path: None,
             oast_wait_secs: 0,
+            network_connection_budget: 128,
+            network_time_budget_secs: 30,
         }
     }
 

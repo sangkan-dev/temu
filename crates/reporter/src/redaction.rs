@@ -24,6 +24,10 @@ pub fn redact_scan_result(result: &ScanResult) -> ScanResult {
     for vulnerability in &mut redacted.vulnerabilities {
         vulnerability.proof = redact_sensitive_text(&vulnerability.proof);
     }
+    for service in &mut redacted.services {
+        service.banner = service.banner.as_deref().map(redact_sensitive_text);
+        service.handshake = service.handshake.as_deref().map(redact_sensitive_text);
+    }
     redacted
 }
 
@@ -91,7 +95,7 @@ mod tests {
     use crate::types::{ScanResult, ScanStats};
     use chrono::Utc;
     use std::collections::HashMap;
-    use temu_core::{Severity, Vulnerability};
+    use temu_core::{ServiceEvidence, Severity, Vulnerability};
 
     #[test]
     fn test_redact_sensitive_text_masks_secret_and_email() {
@@ -116,6 +120,18 @@ mod tests {
                 "api_key=supersecret12345",
                 "https://example.com",
             )],
+            services: vec![ServiceEvidence {
+                endpoint: "tcp://127.0.0.1:6379".to_string(),
+                port: 6379,
+                protocol: "redis".to_string(),
+                product: Some("Redis".to_string()),
+                version: None,
+                confidence: 0.98,
+                banner: Some("token=service-secret-123".to_string()),
+                handshake: Some("password=service-password-123".to_string()),
+                auth_required: Some(false),
+                tls: None,
+            }],
             target_summaries: vec![],
             callback_events: vec![],
             scan_started_at: Utc::now(),
@@ -138,6 +154,14 @@ mod tests {
             redacted.vulnerabilities[0]
                 .proof
                 .contains("api_key=<REDACTED>")
+        );
+        assert_eq!(
+            redacted.services[0].banner.as_deref(),
+            Some("token=<REDACTED>")
+        );
+        assert_eq!(
+            redacted.services[0].handshake.as_deref(),
+            Some("password=<REDACTED>")
         );
     }
 }

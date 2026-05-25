@@ -608,6 +608,7 @@ mod tests {
                     "https://example.com/admin",
                 ),
             ],
+            services: Vec::new(),
             target_summaries: Vec::new(),
             callback_events: Vec::new(),
             scan_started_at: Utc::now(),

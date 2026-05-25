@@ -63,6 +63,12 @@ pub struct AppConfig {
     /// Seconds to wait for callback evidence after OAST-aware probes.
     #[serde(default)]
     pub oast_wait_secs: u64,
+    /// Maximum TCP connections spent profiling one host during port scanning.
+    #[serde(default = "default_network_connection_budget")]
+    pub network_connection_budget: usize,
+    /// Maximum seconds spent on protocol profiling for one host.
+    #[serde(default = "default_network_time_budget_secs")]
+    pub network_time_budget_secs: u64,
 }
 
 fn default_max_recursion_depth() -> usize {
@@ -79,6 +85,14 @@ fn default_browser_crawl_max_pages() -> usize {
 
 fn default_browser_crawl_max_depth() -> usize {
     2
+}
+
+fn default_network_connection_budget() -> usize {
+    256
+}
+
+fn default_network_time_budget_secs() -> u64 {
+    30
 }
 
 impl Default for AppConfig {
@@ -104,6 +118,8 @@ impl Default for AppConfig {
             oast_correlation_id: None,
             oast_database_path: None,
             oast_wait_secs: 0,
+            network_connection_budget: default_network_connection_budget(),
+            network_time_budget_secs: default_network_time_budget_secs(),
         }
     }
 }
@@ -138,7 +154,8 @@ impl AppConfig {
     /// `TEMU_SESSION_BEARER_TOKEN`, `TEMU_SESSION_COOKIE`,
     /// `TEMU_SESSION_BASE_URL`, `TEMU_SESSION_VALIDATE_URL`,
     /// `TEMU_OAST_CALLBACK_URL`, `TEMU_OAST_CORRELATION_ID`,
-    /// `TEMU_OAST_DATABASE_PATH`, and `TEMU_OAST_WAIT_SECS`.
+    /// `TEMU_OAST_DATABASE_PATH`, `TEMU_OAST_WAIT_SECS`,
+    /// `TEMU_NETWORK_CONNECTION_BUDGET`, and `TEMU_NETWORK_TIME_BUDGET_SECS`.
     /// Invalid values are silently ignored.
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("TEMU_RATE_LIMIT")
@@ -217,6 +234,16 @@ impl AppConfig {
             && let Ok(n) = v.parse()
         {
             self.oast_wait_secs = n;
+        }
+        if let Ok(v) = std::env::var("TEMU_NETWORK_CONNECTION_BUDGET")
+            && let Ok(n) = v.parse()
+        {
+            self.network_connection_budget = n;
+        }
+        if let Ok(v) = std::env::var("TEMU_NETWORK_TIME_BUDGET_SECS")
+            && let Ok(n) = v.parse()
+        {
+            self.network_time_budget_secs = n;
         }
         if let Ok(v) = std::env::var("TEMU_SESSION_PROFILE") {
             match SessionProfile::load(Path::new(&v)) {
@@ -310,6 +337,8 @@ mod tests {
         assert!(config.oast_correlation_id.is_none());
         assert!(config.oast_database_path.is_none());
         assert_eq!(config.oast_wait_secs, 0);
+        assert_eq!(config.network_connection_budget, 256);
+        assert_eq!(config.network_time_budget_secs, 30);
     }
 
     #[test]
@@ -333,6 +362,8 @@ oast_callback_url = "http://127.0.0.1:8788/cb"
 oast_correlation_id = "temu-test"
 oast_database_path = "/tmp/oast.sqlite"
 oast_wait_secs = 2
+network_connection_budget = 32
+network_time_budget_secs = 12
 [session_profile]
 base_url_scope = "https://example.com"
 bearer_token = "inline-token"
@@ -365,6 +396,8 @@ bearer_token = "inline-token"
             Some(PathBuf::from("/tmp/oast.sqlite"))
         );
         assert_eq!(config.oast_wait_secs, 2);
+        assert_eq!(config.network_connection_budget, 32);
+        assert_eq!(config.network_time_budget_secs, 12);
         assert_eq!(
             config
                 .session_profile
@@ -461,6 +494,19 @@ bearer_token = "inline-token"
             config.browser_crawl_browser_path,
             Some(PathBuf::from("/opt/chrome"))
         );
+    }
+
+    #[test]
+    fn test_apply_env_overrides_network_budgets() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::set_var("TEMU_NETWORK_CONNECTION_BUDGET", "48") };
+        unsafe { std::env::set_var("TEMU_NETWORK_TIME_BUDGET_SECS", "9") };
+        let mut config = AppConfig::default();
+        config.apply_env_overrides();
+        unsafe { std::env::remove_var("TEMU_NETWORK_CONNECTION_BUDGET") };
+        unsafe { std::env::remove_var("TEMU_NETWORK_TIME_BUDGET_SECS") };
+        assert_eq!(config.network_connection_budget, 48);
+        assert_eq!(config.network_time_budget_secs, 9);
     }
 
     #[test]

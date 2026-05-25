@@ -24,7 +24,10 @@
     "ssrf-internal-redirect.yaml",
     "xss-reflection.yaml"
   ],
-  "network": [],
+  "network": [
+    "network-redis-no-auth.yaml",
+    "network-memcached-exposed.yaml"
+  ],
   "dictionaries": [
     "dictionaries/parameters-small.txt",
     "dictionaries/paths-small.txt",

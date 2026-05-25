@@ -1535,22 +1535,29 @@ evidence mentah melalui flag atau target profile eksplisit.
 **Goal:** Perluas Temu dari web scanner menjadi network-aware scanner yang bisa memahami service non-HTTP secara lebih serius.
 
 ### 31.1 Protocol-Aware Probing
-- [ ] 🔴 Perbaiki port scanner agar bisa profile TCP service tanpa hanya mengandalkan default port
-- [ ] 🔴 Tambahkan banner parser untuk SSH, FTP, SMTP, IMAP, POP3, Redis, Memcached, MongoDB, PostgreSQL, MySQL, MSSQL, Elasticsearch, RabbitMQ, MQTT, RDP, SMB
-- [ ] 🟡 Deteksi TLS di service non-443 dan jalankan TLS fingerprint di atasnya
-- [ ] 🟡 Ambil version string secara pasif/aman jika protokol mendukung greeting
-- [ ] 🟢 Tandai service unknown dengan raw banner yang sudah disanitasi
+- [x] 🔴 Perbaiki port scanner agar bisa profile TCP service tanpa hanya mengandalkan default port
+- [x] 🔴 Tambahkan banner parser untuk SSH, FTP, SMTP, IMAP, POP3, Redis, Memcached, MongoDB, PostgreSQL, MySQL, MSSQL, Elasticsearch, RabbitMQ, MQTT, RDP, SMB
+- [x] 🟡 Deteksi TLS di service non-443 dan jalankan TLS fingerprint di atasnya
+- [x] 🟡 Ambil version string secara pasif/aman jika protokol mendukung greeting
+- [x] 🟢 Tandai service unknown dengan raw banner yang sudah disanitasi
 
 ### 31.2 Safe Network Scripts
-- [ ] 🔴 Buat rule type baru untuk network/service checks, terpisah dari HTTP vulnerability rule
-- [ ] 🔴 Support matcher berbasis banner, protocol response, status handshake, TLS metadata, dan auth-required signal
-- [ ] 🟡 Tambahkan time budget dan connection budget per host agar tidak agresif
-- [ ] 🟡 Tambahkan output evidence per service: port, protocol, product, version, confidence
+- [x] 🔴 Buat rule type baru untuk network/service checks, terpisah dari HTTP vulnerability rule
+- [x] 🔴 Support matcher berbasis banner, protocol response, status handshake, TLS metadata, dan auth-required signal
+- [x] 🟡 Tambahkan time budget dan connection budget per host agar tidak agresif
+- [x] 🟡 Tambahkan output evidence per service: port, protocol, product, version, confidence
 
 ### 🏁 Sprint 31 — Definition of Done
 - Temu bisa mengidentifikasi service non-HTTP dengan confidence dan evidence
 - Network rules punya schema sendiri dan tidak dicampur dengan HTTP path probing
 - Scan tetap safe-by-default, tanpa brute force credential
+
+**Implementasi:** `discovery::port_scan` sekarang membuat evidence service terstruktur
+dengan parser/probe read-only dan observasi respons TLS ClientHello ringan di port terbuka, dibatasi
+`network_connection_budget` serta `network_time_budget_secs`. `vulnerability::network`
+memuat dokumen `rule_type: network` secara terpisah dari executor HTTP dan mencocokkan
+banner/handshake/TLS/auth evidence. JSON/HTML report menyertakan protocol, product,
+version, confidence, TLS, auth signal, dan handshake yang disanitasi.
 
 ---
 

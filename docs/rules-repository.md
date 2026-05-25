@@ -26,9 +26,9 @@ temu-rules/
 │   └── cve/
 │       └── 2026.yaml
 ├── network/
-│   ├── ssh.yaml
-│   ├── tls.yaml
-│   └── http-banner.yaml
+│   ├── redis-no-auth.yaml
+│   ├── memcached-exposed.yaml
+│   └── tls-policy.yaml
 ├── upstream/
 │   ├── fingerprint/
 │   ├── cve/
@@ -50,9 +50,9 @@ temu-rules/
     "vulnerability/cve/2026.yaml"
   ],
   "network": [
-    "network/ssh.yaml",
-    "network/tls.yaml",
-    "network/http-banner.yaml"
+    "network/redis-no-auth.yaml",
+    "network/memcached-exposed.yaml",
+    "network/tls-policy.yaml"
   ],
   "dictionaries": [
     "dictionaries/paths-small.txt",
@@ -109,6 +109,9 @@ Risk policy:
 - `risk_level: intrusive`, `risk_level: destructive`, `risk_level: dos`, or `requires_confirmation: true` rules require `temu scan ... --allow-risky-rules` or `TEMU_ALLOW_RISKY_RULES=true`.
 - NVD data should be used freely for metadata and candidate generation, but active probes must still carry a risk label because NVD does not distinguish read-only checks from crash, write, or RCE validation paths.
 - CVE metadata findings state their CPE applicability reason and remain unverified until an active reviewed rule confirms the exposure.
+- Network documents declare `rule_type: network` and match sanitized service
+  evidence (`banner_regex`, `protocol_response_regex`, `status_handshake`,
+  `tls_detected`, `auth_required`) rather than HTTP payload execution.
 
 Marketplace policy:
 

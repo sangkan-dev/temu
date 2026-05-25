@@ -89,6 +89,45 @@ Known capabilities currently include:
 - `browser_crawl`
 - `api_discovery`
 - `stateful_dast`
+- `network_service`
+- `tls_fingerprint`
+
+## Network Service Rules
+
+Network checks use a separate schema and never enter the HTTP path/payload
+executor. They match protocol evidence already collected by read-only service
+profiling:
+
+```yaml
+schema_version: "1"
+rule_type: network
+id: "NETWORK-REDIS-NO-AUTH"
+name: "Redis accepts commands without authentication"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+compatibility:
+  minimum_temu_version: "1.4.0"
+  required_capabilities: ["network_service"]
+protocols: ["redis"]
+products: ["Redis"]
+severity: high
+cvss: 8.6
+risk_level: safe
+requires_confirmation: false
+matcher:
+  protocol_response_regex: "(?i)^\\+PONG"
+  auth_required: false
+remediation: "Require authentication and restrict network exposure."
+```
+
+Available network matchers are `banner_regex`, `protocol_response_regex`,
+`status_handshake`, `tls_detected`, and `auth_required`. A rule must include at
+least one matcher. The scanner supplies sanitized banner/handshake evidence,
+protocol, product, version, confidence, and observed TLS metadata in reports.
+
+Network rules must remain read-only. Authentication brute force, data mutation,
+service reconfiguration, and DoS/crash validation are not valid safe rules.
 
 ## Validation And Checksums
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use temu_core::{Asset, Severity, TemuError, Vulnerability};
+use temu_core::{Asset, ServiceEvidence, Severity, TemuError, Vulnerability};
 use tera::{Context, Tera};
 use tracing::info;
 
@@ -64,6 +64,10 @@ fn build_templates() -> Result<Tera, TemuError> {
             include_str!("../../../templates/partials/assets_table.html"),
         ),
         (
+            "partials/services_table.html",
+            include_str!("../../../templates/partials/services_table.html"),
+        ),
+        (
             "partials/tech_stack.html",
             include_str!("../../../templates/partials/tech_stack.html"),
         ),
@@ -110,6 +114,7 @@ struct ReportView {
     target_summaries: Vec<TargetSummaryView>,
     vulnerabilities: Vec<VulnerabilityView>,
     assets: Vec<Asset>,
+    services: Vec<ServiceView>,
     tech_groups: Vec<TechGroupView>,
     callback_events: Vec<CallbackEventView>,
     graph: GraphSummaryView,
@@ -150,6 +155,11 @@ impl ReportView {
                 .collect(),
             vulnerabilities,
             assets: result.assets.clone(),
+            services: result
+                .services
+                .iter()
+                .map(ServiceView::from_evidence)
+                .collect(),
             tech_groups: tech_groups(result),
             callback_events: result
                 .callback_events
@@ -386,6 +396,46 @@ struct TechGroupView {
 }
 
 #[derive(Debug, Serialize)]
+struct ServiceView {
+    endpoint: String,
+    protocol: String,
+    product: String,
+    version: String,
+    confidence: String,
+    tls: String,
+    auth_required: String,
+    evidence: String,
+}
+
+impl ServiceView {
+    fn from_evidence(service: &ServiceEvidence) -> Self {
+        Self {
+            endpoint: service.endpoint.clone(),
+            protocol: service.protocol.clone(),
+            product: service
+                .product
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string()),
+            version: service.version.clone().unwrap_or_else(|| "-".to_string()),
+            confidence: format!("{:.0}%", service.confidence * 100.0),
+            tls: service
+                .tls
+                .as_ref()
+                .filter(|tls| tls.detected)
+                .and_then(|tls| tls.protocol_version.clone())
+                .unwrap_or_else(|| "No TLS observed".to_string()),
+            auth_required: service
+                .auth_required
+                .map(|required| required.to_string())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            evidence: crate::redaction::redact_sensitive_text(
+                service.handshake.as_deref().unwrap_or("-"),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct TechView {
     url: String,
     name: String,
@@ -455,7 +505,7 @@ mod tests {
     use chrono::Utc;
     use fingerprint::{TechCategory, TechStack};
     use std::collections::HashMap;
-    use temu_core::{Asset, AssetType};
+    use temu_core::{Asset, AssetType, ServiceEvidence, TlsEvidence};
 
     fn make_result() -> ScanResult {
         let mut tech_stacks = HashMap::new();
@@ -485,6 +535,22 @@ mod tests {
                 "status=200",
                 "https://example.com/.env",
             )],
+            services: vec![ServiceEvidence {
+                endpoint: "tcp://127.0.0.1:6379".to_string(),
+                port: 6379,
+                protocol: "redis".to_string(),
+                product: Some("Redis".to_string()),
+                version: None,
+                confidence: 0.98,
+                banner: Some("+PONG".to_string()),
+                handshake: Some("+PONG".to_string()),
+                auth_required: Some(false),
+                tls: Some(TlsEvidence {
+                    detected: true,
+                    protocol_version: Some("TLS 1.2 or newer".to_string()),
+                    cipher_suite: None,
+                }),
+            }],
             target_summaries: vec![],
             callback_events: vec![],
             scan_started_at: Utc::now(),
@@ -518,5 +584,9 @@ mod tests {
         assert!(html.contains("Executive Summary"));
         assert!(html.contains("SENSITIVE-FILES-ENV"));
         assert!(html.contains("nginx"));
+        assert!(html.contains("Network Services"));
+        assert!(html.contains("127.0.0.1"));
+        assert!(html.contains("6379"));
+        assert!(html.contains("Redis"));
     }
 }

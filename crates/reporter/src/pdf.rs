@@ -435,6 +435,40 @@ impl PdfReport {
             }
         }
 
+        if !result.services.is_empty() {
+            y -= 6.0;
+            self.section_title(layer, "Network Service Evidence", y);
+            y -= 12.0;
+            for service in result.services.iter().take(6) {
+                let tls = service
+                    .tls
+                    .as_ref()
+                    .filter(|tls| tls.detected)
+                    .and_then(|tls| tls.protocol_version.as_deref())
+                    .unwrap_or("no TLS observed");
+                let evidence = crate::redaction::redact_sensitive_text(
+                    service.handshake.as_deref().unwrap_or("-"),
+                );
+                y = self.wrapped_text(
+                    layer,
+                    &format!(
+                        "{} | {} / {} {} | confidence {:.0}% | TLS: {} | {}",
+                        service.endpoint,
+                        service.protocol,
+                        service.product.as_deref().unwrap_or("unknown"),
+                        service.version.as_deref().unwrap_or("-"),
+                        service.confidence * 100.0,
+                        tls,
+                        evidence
+                    ),
+                    8.5,
+                    (MARGIN_LEFT_MM, y),
+                    106,
+                    false,
+                ) - 3.0;
+            }
+        }
+
         let recommendation_y = y.min(100.0) - 8.0;
         self.section_title(layer, "General Recommendations", recommendation_y);
         let mut next_y = recommendation_y - 12.0;
@@ -713,6 +747,7 @@ mod tests {
             )],
             tech_stacks,
             vulnerabilities: vec![vulnerability],
+            services: vec![],
             target_summaries: vec![],
             callback_events: vec![],
             scan_started_at: Utc::now(),
