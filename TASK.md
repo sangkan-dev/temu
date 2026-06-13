@@ -1570,7 +1570,10 @@ version, confidence, TLS, auth signal, dan handshake yang disanitasi.
 - [ ] 🔴 Elasticsearch unauthenticated exposure check
 - [ ] 🔴 MongoDB unauthenticated exposure check
 - [ ] 🔴 Memcached exposed check
-- [ ] 🟡 PostgreSQL/MySQL/MSSQL auth-required and version exposure checks
+- [ ] 🔴 PostgreSQL/MySQL/MSSQL public exposure + auth-required + transport encryption checks
+- [ ] 🔴 Naikkan kombinasi public database + no TLS + password authentication menjadi finding terverifikasi tanpa credential guessing
+- [ ] 🟡 Bedakan database yang ditolak firewall/ACL, ditolak `pg_hba.conf`, dan menerima proses autentikasi
+- [ ] 🟡 Ambil version/auth capability secara read-only tanpa brute force atau login attempt dengan akun nyata
 - [ ] 🟡 MQTT anonymous access signal
 - [ ] 🟡 RabbitMQ management exposure signal
 
@@ -1679,6 +1682,113 @@ version, confidence, TLS, auth signal, dan handshake yang disanitasi.
 
 ---
 
+## Sprint 36 — Real-World Validation, Auth Accuracy & False-Positive Reduction
+
+**Goal:** Mengubah hasil scan Temu menjadi verdict yang lebih dapat dipercaya setelah divalidasi
+pada aplikasi authenticated Next.js/NextAuth, GraphQL, health API, dan service database publik.
+
+### 36.1 Session Validation & Authenticated Coverage
+- [ ] 🔴 Tolak session validation yang berakhir di login page atau melewati redirect login walaupun final status `2xx`
+- [ ] 🔴 Simpan evidence validasi session: initial status, final status, final URL, redirect chain, dan authenticated marker
+- [ ] 🟡 Support expected/forbidden marker pada session profile untuk membedakan dashboard authenticated dan login shell
+- [ ] 🟡 Deteksi session expired/revoked di tengah scan dan tandai coverage setelah expiry sebagai inconclusive
+- [ ] 🟡 Laporkan persentase endpoint yang benar-benar menerima authenticated response
+- [ ] 🟢 Tambahkan validasi khusus NextAuth/Auth.js session cookie dan chunked session token
+
+### 36.2 Context-Aware Stateful Findings
+- [ ] 🔴 Jangan anggap email placeholder seperti `admin@example.com` sebagai PII exposure
+- [ ] 🔴 Jangan anggap string `stack trace` di minified/static framework bundle sebagai verbose error
+- [ ] 🔴 Ubah status `verified` agar hanya diberikan setelah detector melakukan validasi konteks, bukan hanya regex match
+- [ ] 🟡 Klasifikasikan evidence berdasarkan HTML attribute, static asset, API JSON, error response, dan user-generated content
+- [ ] 🟡 Deduplicate finding yang sama setelah redirect atau ditemukan pada response body identik
+- [ ] 🟢 Tambahkan allowlist placeholder/test value dan framework boilerplate yang dapat diperbarui melalui rules repository
+
+### 36.3 CVE Applicability & Deduplication
+- [ ] 🔴 Deduplicate CVE berdasarkan root cause `CVE ID + CPE + reachable service`
+- [ ] 🔴 Pisahkan label `metadata-only`, `version-range match`, `configuration-dependent`, dan `actively verified`
+- [ ] 🟡 Jangan menaikkan metadata-only CVE sebagai High terkonfirmasi pada executive summary
+- [ ] 🟡 Tambahkan distro/package backport awareness untuk banner seperti `nginx/1.18.0 (Ubuntu)`
+- [ ] 🟡 Tandai CVE yang membutuhkan kondisi konfigurasi khusus, misalnya nginx `resolver`
+- [ ] 🟢 Hasilkan langkah validasi manual read-only dari metadata CVE dan platform yang terdeteksi
+
+### 36.4 Authenticated API & Information Exposure Review
+- [ ] 🔴 Deteksi health/status endpoint yang mengekspos internal hostname, private IP, backend URL, component version, atau token status
+- [ ] 🔴 Beri severity berdasarkan privilege session, sensitivitas data, dan apakah endpoint dapat diakses tanpa autentikasi
+- [ ] 🟡 GraphQL introspection inventory: query, mutation, argument, return type, dan required role tanpa menjalankan mutation
+- [ ] 🟡 Role-differential API scan menggunakan dua atau lebih named session profile untuk mendeteksi BFLA/BOLA
+- [ ] 🟡 Deteksi API response yang mengembalikan database identifier, account role, dan security metadata yang tidak diperlukan
+- [ ] 🟢 Tandai authenticated response dengan shared-cache directive seperti `s-maxage` sebagai observation yang perlu validasi lintas user
+
+### 36.5 Audit-Friendly Verdict & Manual Validation
+- [ ] 🔴 Group report menjadi `confirmed`, `likely`, `metadata-only`, `inconclusive`, dan `false-positive-suspected`
+- [ ] 🔴 Tampilkan alasan confidence/verdict dan evidence yang mendasarinya pada JSON/HTML/PDF
+- [ ] 🟡 Sertakan langkah pembuktian manual read-only yang siap dijalankan untuk setiap finding
+- [ ] 🟡 Bedakan finding vulnerability, hardening issue, sensitive observation, dan attack-surface exposure
+- [ ] 🟢 Support file triage lokal untuk menandai false positive/accepted risk dan menggunakannya pada baseline berikutnya
+
+### 🏁 Sprint 36 — Definition of Done
+- Session yang redirect ke login tidak lagi dinyatakan valid
+- Placeholder dan framework boilerplate tidak lagi menghasilkan Medium finding terverifikasi
+- Public database tanpa TLS yang menerima autentikasi otomatis menjadi network finding
+- CVE metadata tidak diduplikasi atau disajikan sebagai kerentanan terkonfirmasi
+- Health API, GraphQL, dan authenticated cache posture punya verdict serta evidence yang dapat diaudit
+
+**Sumber requirement:** Audit authorized terhadap aplikasi Next.js/NextAuth menunjukkan bahwa
+Temu berhasil menemukan attack surface, tetapi masih menandai placeholder email dan static
+framework text sebagai finding terverifikasi, menduplikasi CVE metadata, belum menaikkan
+PostgreSQL publik tanpa TLS sebagai finding, dan belum memberi verdict pada authenticated
+health API, GraphQL introspection, serta shared-cache directive.
+
+---
+
+## Sprint 37 — Incremental Reporting, Graceful Cancellation & Resume
+
+**Goal:** Pastikan scan panjang tetap menghasilkan evidence yang dapat digunakan ketika
+dibatalkan, terputus, atau belum menyelesaikan seluruh pipeline.
+
+### 37.1 Incremental Scan State & Checkpoint
+- [ ] 🔴 Buat model scan state yang menyimpan status, stage aktif, stage selesai, progress, assets, services, findings, dan errors
+- [ ] 🔴 Tulis checkpoint JSON ringan setelah setiap pipeline stage selesai
+- [ ] 🔴 Tulis checkpoint periodik selama browser crawl, fuzzing, vulnerability scan, verifier, dan multi-target scan
+- [ ] 🔴 Gunakan atomic write melalui temporary file + rename agar checkpoint tidak korup saat proses berhenti
+- [ ] 🟡 Simpan scan ID stabil dan metadata waktu update terakhir
+- [ ] 🟡 Batasi frekuensi checkpoint agar tidak memperlambat scan atau membebani disk
+- [ ] 🟢 Support SQLite checkpoint cache untuk scan dengan asset/finding sangat besar
+
+### 37.2 Graceful Cancellation
+- [ ] 🔴 Ganti abort langsung pada `Ctrl+C` dengan cancellation token yang diteruskan ke seluruh pipeline
+- [ ] 🔴 Saat cancellation pertama, berhenti menjadwalkan request baru dan tunggu request aktif dengan grace timeout
+- [ ] 🔴 Generate partial report dari seluruh evidence yang telah selesai sebelum proses keluar
+- [ ] 🟡 `Ctrl+C` kedua melakukan force quit dengan warning bahwa checkpoint terbaru mungkin belum memuat request aktif
+- [ ] 🟡 Tambahkan exit code khusus untuk completed, partially completed/cancelled, dan failed
+- [ ] 🟢 Support cancellation melalui WebSocket/runtime tanpa kehilangan partial result
+
+### 37.3 Partial Report & Coverage Semantics
+- [ ] 🔴 Generate `*_partial.json` dan optional `*_partial_audit.json` selama scan
+- [ ] 🔴 Beri label besar `INCOMPLETE SCAN` pada partial HTML/PDF agar tidak dianggap sebagai hasil final
+- [ ] 🔴 Tampilkan current stage, completed stages, cancellation reason, coverage processed/total, dan last checkpoint time
+- [ ] 🔴 Bedakan finding `confirmed`, `pending_verification`, `metadata_only`, `inconclusive`, dan surface `not_tested`
+- [ ] 🟡 Generate partial HTML/PDF hanya pada stage checkpoint besar, cancellation, atau interval yang dikonfigurasi
+- [ ] 🟡 Jangan update history/trend/baseline final menggunakan partial report kecuali user mengaktifkan opsi eksplisit
+- [ ] 🟢 Tambahkan progress timeline dan incomplete coverage summary pada frontend/realtime UI
+
+### 37.4 Resume & Recovery
+- [ ] 🔴 Tambahkan `temu scan resume --checkpoint <partial.json>` untuk melanjutkan scan terputus
+- [ ] 🔴 Lewati stage/item yang sudah selesai dan lanjutkan dari pekerjaan yang belum diproses
+- [ ] 🟡 Validasi compatibility checkpoint terhadap versi Temu, config, scope, rules checksum, dan session profile
+- [ ] 🟡 Saat session expired, minta refresh/validasi session sebelum resume authenticated scan
+- [ ] 🟡 Deduplicate evidence/finding antara checkpoint lama dan hasil setelah resume
+- [ ] 🟢 Support resume multi-target/distributed scan dari target atau task terakhir yang belum selesai
+
+### 🏁 Sprint 37 — Definition of Done
+- `Ctrl+C` pertama menghasilkan partial report yang valid sebelum proses keluar
+- Scan panjang menyimpan checkpoint atomik tanpa menunggu pipeline selesai
+- Partial report selalu menjelaskan coverage dan bagian yang belum diuji
+- Scan dapat dilanjutkan dari checkpoint tanpa mengulang seluruh pekerjaan
+- Final report hanya dibuat ketika seluruh stage wajib selesai atau user menerima partial completion
+
+---
+
 ## Parking Lot — Riset Lanjutan
 
 - [ ] SBOM/dependency enrichment dari web fingerprint dan package metadata jika tersedia
@@ -1731,3 +1841,5 @@ version, confidence, TLS, auth signal, dan handshake yang disanitasi.
 | 33 | Advanced Value | Exposure mapping | Internal attack surface graph |
 | 34 | Advanced Value | Infra posture | Cloud, container, Kubernetes exposure |
 | 35 | Advanced Value | AI agent | Local-first triage and scan planning |
+| 36 | Advanced Value | Real-world validation | Auth accuracy, API posture, CVE/false-positive triage |
+| 37 | Advanced Value | Scan continuity | Incremental report, graceful cancellation, resume |
