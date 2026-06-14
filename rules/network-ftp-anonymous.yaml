@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-FTP-ANONYMOUS"
+name: "FTP service permits anonymous login"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["ftp"]
+severity: high
+cvss: 7.5
+risk_level: intrusive
+requires_confirmation: true
+matcher:
+  required_signals: ["anonymous_login_accepted"]
+remediation: "Disable anonymous FTP access and prefer a modern encrypted file transfer protocol."
+references:
+  - "https://www.rfc-editor.org/rfc/rfc1635"

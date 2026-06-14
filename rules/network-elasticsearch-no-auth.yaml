@@ -1,0 +1,22 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-ELASTICSEARCH-NO-AUTH"
+name: "Elasticsearch API responds without authentication"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["elasticsearch"]
+severity: high
+cvss: 8.1
+risk_level: safe
+requires_confirmation: false
+matcher:
+  auth_required: false
+  required_signals: ["unauthenticated_api_response"]
+remediation: "Require authentication and restrict Elasticsearch listeners to trusted network segments."
+references:
+  - "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-minimal-setup.html"

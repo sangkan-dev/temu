@@ -100,6 +100,33 @@ pub struct TlsEvidence {
     pub protocol_version: Option<String>,
     /// ServerHello cipher suite identifier when observable.
     pub cipher_suite: Option<String>,
+    /// Protocol versions accepted by explicit read-only handshakes.
+    #[serde(default)]
+    pub supported_versions: Vec<String>,
+    /// Leaf certificate subject when a full TLS handshake completed.
+    #[serde(default)]
+    pub certificate_subject: Option<String>,
+    /// Leaf certificate issuer when a full TLS handshake completed.
+    #[serde(default)]
+    pub certificate_issuer: Option<String>,
+    /// Leaf certificate expiration timestamp in RFC 3339 form.
+    #[serde(default)]
+    pub certificate_not_after: Option<String>,
+    /// Leaf certificate signature algorithm object identifier.
+    #[serde(default)]
+    pub signature_algorithm: Option<String>,
+    /// DNS and IP Subject Alternative Names observed on the leaf certificate.
+    #[serde(default)]
+    pub subject_alt_names: Vec<String>,
+    /// Number of certificates returned by the service.
+    #[serde(default)]
+    pub certificate_chain_length: usize,
+    /// Whether the leaf certificate subject and issuer are identical.
+    #[serde(default)]
+    pub self_signed: Option<bool>,
+    /// Whether a supplied DNS target does not match the certificate SAN inventory.
+    #[serde(default)]
+    pub hostname_mismatch: Option<bool>,
 }
 
 /// Passive or read-only protocol evidence collected from one reachable service.
@@ -125,6 +152,9 @@ pub struct ServiceEvidence {
     pub auth_required: Option<bool>,
     /// TLS handshake metadata if TLS was accepted on this port.
     pub tls: Option<TlsEvidence>,
+    /// Structured, non-secret observations emitted by protocol-aware probes.
+    #[serde(default)]
+    pub signals: Vec<String>,
 }
 
 /// CVSS-aligned severity classification.
@@ -265,13 +295,24 @@ mod tests {
                 detected: true,
                 protocol_version: Some("TLS 1.3".to_string()),
                 cipher_suite: None,
+                supported_versions: vec!["TLS 1.3".to_string()],
+                certificate_subject: None,
+                certificate_issuer: None,
+                certificate_not_after: None,
+                signature_algorithm: None,
+                subject_alt_names: Vec::new(),
+                certificate_chain_length: 0,
+                self_signed: None,
+                hostname_mismatch: None,
             }),
+            signals: vec!["publicly_routable".to_string()],
         };
 
         let json = serde_json::to_string(&evidence).expect("serialization failed");
         let decoded: ServiceEvidence = serde_json::from_str(&json).expect("deserialization failed");
         assert_eq!(decoded.protocol, "redis");
         assert_eq!(decoded.auth_required, Some(false));
+        assert_eq!(decoded.signals, vec!["publicly_routable"]);
         assert!(decoded.tls.is_some_and(|tls| tls.detected));
     }
 

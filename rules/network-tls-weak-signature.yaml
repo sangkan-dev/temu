@@ -1,0 +1,20 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-TLS-WEAK-SIGNATURE"
+name: "TLS certificate uses a weak signature algorithm"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service", "tls_fingerprint"]
+severity: high
+cvss: 7.4
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["tls_weak_signature"]
+remediation: "Replace the certificate with one signed using SHA-256 or a stronger supported algorithm."
+references:
+  - "https://datatracker.ietf.org/doc/html/rfc9155"

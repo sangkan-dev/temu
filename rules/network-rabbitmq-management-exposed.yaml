@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-RABBITMQ-MANAGEMENT-EXPOSED"
+name: "RabbitMQ management interface is exposed"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+products: ["RabbitMQ Management"]
+severity: medium
+cvss: 5.3
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["management_interface_exposed"]
+remediation: "Restrict RabbitMQ management access to trusted administrative networks."
+references:
+  - "https://www.rabbitmq.com/docs/management"

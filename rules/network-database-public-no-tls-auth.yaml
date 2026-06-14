@@ -1,0 +1,22 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-DATABASE-PUBLIC-NO-TLS-AUTH"
+name: "Public database exposes password authentication without TLS support"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["postgresql", "mysql", "mssql"]
+severity: high
+cvss: 8.1
+risk_level: safe
+requires_confirmation: false
+matcher:
+  auth_required: true
+  required_signals: ["publicly_routable", "auth_exchange_available", "tls_not_supported"]
+remediation: "Require TLS for database authentication and restrict the listener to trusted networks."
+references:
+  - "https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html"

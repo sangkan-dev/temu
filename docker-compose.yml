@@ -12,7 +12,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    profiles: ["distributed", "benchmark"]
+    profiles: ["distributed", "benchmark", "network-lab"]
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -20,6 +20,51 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  network-memcached:
+    image: memcached:1.6-alpine
+    profiles: ["network-lab"]
+    ports:
+      - "127.0.0.1:11211:11211"
+
+  network-mongodb:
+    image: mongo:8
+    profiles: ["network-lab"]
+    ports:
+      - "127.0.0.1:27017:27017"
+
+  network-postgres:
+    image: postgres:17-alpine
+    profiles: ["network-lab"]
+    environment:
+      POSTGRES_PASSWORD: temu-network-lab
+    command: ["postgres", "-c", "ssl=off"]
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  network-mqtt:
+    image: eclipse-mosquitto:2
+    profiles: ["network-lab"]
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf 'listener 1883 0.0.0.0\nallow_anonymous true\n' > /tmp/mosquitto.conf
+        exec mosquitto -c /tmp/mosquitto.conf
+    ports:
+      - "127.0.0.1:1883:1883"
+
+  network-rabbitmq:
+    image: rabbitmq:4-management-alpine
+    profiles: ["network-lab"]
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
 
   temu-worker:
     image: sangkan-temu:local

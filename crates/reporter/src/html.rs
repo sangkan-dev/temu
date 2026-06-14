@@ -404,6 +404,7 @@ struct ServiceView {
     confidence: String,
     tls: String,
     auth_required: String,
+    signals: String,
     evidence: String,
 }
 
@@ -422,12 +423,37 @@ impl ServiceView {
                 .tls
                 .as_ref()
                 .filter(|tls| tls.detected)
-                .and_then(|tls| tls.protocol_version.clone())
+                .map(|tls| {
+                    let versions = if tls.supported_versions.is_empty() {
+                        tls.protocol_version
+                            .clone()
+                            .unwrap_or_else(|| "TLS".to_string())
+                    } else {
+                        tls.supported_versions.join(", ")
+                    };
+                    let certificate = tls
+                        .certificate_subject
+                        .as_deref()
+                        .map(|subject| {
+                            format!(
+                                "; cert={subject}; expires={}; SANs={}",
+                                tls.certificate_not_after.as_deref().unwrap_or("unknown"),
+                                tls.subject_alt_names.join(",")
+                            )
+                        })
+                        .unwrap_or_default();
+                    format!("{versions}{certificate}")
+                })
                 .unwrap_or_else(|| "No TLS observed".to_string()),
             auth_required: service
                 .auth_required
                 .map(|required| required.to_string())
                 .unwrap_or_else(|| "Unknown".to_string()),
+            signals: if service.signals.is_empty() {
+                "-".to_string()
+            } else {
+                service.signals.join(", ")
+            },
             evidence: crate::redaction::redact_sensitive_text(
                 service.handshake.as_deref().unwrap_or("-"),
             ),
@@ -549,7 +575,17 @@ mod tests {
                     detected: true,
                     protocol_version: Some("TLS 1.2 or newer".to_string()),
                     cipher_suite: None,
+                    supported_versions: vec!["TLS 1.2".to_string()],
+                    certificate_subject: None,
+                    certificate_issuer: None,
+                    certificate_not_after: None,
+                    signature_algorithm: None,
+                    subject_alt_names: Vec::new(),
+                    certificate_chain_length: 0,
+                    self_signed: None,
+                    hostname_mismatch: None,
                 }),
+                signals: vec!["unauthenticated_command_accepted".to_string()],
             }],
             target_summaries: vec![],
             callback_events: vec![],

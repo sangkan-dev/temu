@@ -1,0 +1,20 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-TLS-CERTIFICATE-EXPIRED"
+name: "TLS certificate is expired"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service", "tls_fingerprint"]
+severity: high
+cvss: 7.4
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["tls_certificate_expired"]
+remediation: "Replace the expired certificate and automate certificate renewal monitoring."
+references:
+  - "https://datatracker.ietf.org/doc/html/rfc5280"

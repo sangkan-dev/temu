@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-DATABASE-PUBLIC-EXPOSURE"
+name: "Database service is reachable on a publicly routable address"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["postgresql", "mysql", "mssql", "mongodb"]
+severity: medium
+cvss: 5.3
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["publicly_routable"]
+remediation: "Restrict database listeners with firewall rules, private networking, or an authenticated access proxy."
+references:
+  - "https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html"

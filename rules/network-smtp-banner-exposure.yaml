@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-SMTP-BANNER-EXPOSURE"
+name: "SMTP service exposes a greeting banner"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["smtp"]
+severity: info
+cvss: 0.0
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["smtp_banner_exposed"]
+remediation: "Minimize product and version details in SMTP greeting banners."
+references:
+  - "https://www.rfc-editor.org/rfc/rfc5321"

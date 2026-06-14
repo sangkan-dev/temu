@@ -131,8 +131,22 @@ cargo run -p cli -- scan network --cidr 192.168.1.0/24 --ports 80,443,8080
 Network scans collect read-only evidence for SSH, FTP, mail protocols, databases,
 caches, brokers, remote-management protocols, and HTTP services even when they
 run on non-default ports. JSON, HTML, and PDF reports include the observed protocol,
-product/version, confidence, sanitized handshake, authentication signal, and
-TLS record metadata. The default safety budgets are configurable:
+product/version, confidence, sanitized handshake, authentication signal, service
+misconfiguration signals, and TLS certificate metadata. Temu performs read-only
+protocol probes without credential guessing. Checks that initiate an authenticated
+session, such as FTP anonymous login, require `--allow-risky-rules`.
+
+Run the isolated network-service lab:
+
+```bash
+docker compose --profile network-lab up -d
+cargo run -p cli -- scan network \
+  --cidr 127.0.0.1/32 \
+  --ports 1883,5432,5672,6379,11211,15672,27017
+docker compose --profile network-lab down
+```
+
+The default safety budgets are configurable:
 
 ```toml
 network_connection_budget = 256

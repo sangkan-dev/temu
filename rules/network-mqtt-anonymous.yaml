@@ -1,0 +1,22 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-MQTT-ANONYMOUS"
+name: "MQTT broker accepts an anonymous connection"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["mqtt"]
+severity: high
+cvss: 7.5
+risk_level: safe
+requires_confirmation: false
+matcher:
+  auth_required: false
+  required_signals: ["anonymous_connection_accepted"]
+remediation: "Disable anonymous MQTT access and apply topic-level authorization."
+references:
+  - "https://mosquitto.org/man/mosquitto-conf-5.html"

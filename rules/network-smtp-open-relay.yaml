@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-SMTP-OPEN-RELAY"
+name: "SMTP server accepts an external relay envelope"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["smtp"]
+severity: high
+cvss: 7.5
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["open_relay_no_delivery_accepted"]
+remediation: "Reject unauthenticated relay attempts and restrict relay permissions to approved clients."
+references:
+  - "https://www.rfc-editor.org/rfc/rfc5321"

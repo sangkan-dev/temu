@@ -1,0 +1,20 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-TLS-SELF-SIGNED"
+name: "TLS service presents a self-signed certificate"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service", "tls_fingerprint"]
+severity: medium
+cvss: 5.3
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["tls_self_signed"]
+remediation: "Use a certificate issued by a trusted internal or public certificate authority."
+references:
+  - "https://datatracker.ietf.org/doc/html/rfc5280"

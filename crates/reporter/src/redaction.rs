@@ -131,6 +131,7 @@ mod tests {
                 handshake: Some("password=service-password-123".to_string()),
                 auth_required: Some(false),
                 tls: None,
+                signals: vec!["unauthenticated_command_accepted".to_string()],
             }],
             target_summaries: vec![],
             callback_events: vec![],

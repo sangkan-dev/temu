@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-SMTP-NO-STARTTLS"
+name: "SMTP service does not advertise STARTTLS"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["smtp"]
+severity: medium
+cvss: 5.3
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["starttls_not_advertised"]
+remediation: "Enable STARTTLS with a trusted certificate and require encrypted authentication."
+references:
+  - "https://www.rfc-editor.org/rfc/rfc3207"

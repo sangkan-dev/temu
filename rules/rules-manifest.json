@@ -26,7 +26,25 @@
   ],
   "network": [
     "network-redis-no-auth.yaml",
-    "network-memcached-exposed.yaml"
+    "network-memcached-exposed.yaml",
+    "network-elasticsearch-no-auth.yaml",
+    "network-mongodb-no-auth.yaml",
+    "network-database-public-exposure.yaml",
+    "network-database-public-no-tls-auth.yaml",
+    "network-postgresql-pg-hba-rejected.yaml",
+    "network-mqtt-anonymous.yaml",
+    "network-rabbitmq-management-exposed.yaml",
+    "network-smtp-open-relay.yaml",
+    "network-smtp-no-starttls.yaml",
+    "network-smtp-banner-exposure.yaml",
+    "network-rdp-no-nla.yaml",
+    "network-smb-signing-not-required.yaml",
+    "network-ftp-anonymous.yaml",
+    "network-tls-legacy-protocol.yaml",
+    "network-tls-certificate-expired.yaml",
+    "network-tls-hostname-mismatch.yaml",
+    "network-tls-self-signed.yaml",
+    "network-tls-weak-signature.yaml"
   ],
   "dictionaries": [
     "dictionaries/parameters-small.txt",

@@ -1566,29 +1566,34 @@ version, confidence, TLS, auth signal, dan handshake yang disanitasi.
 **Goal:** Tambahkan deteksi vulnerability/misconfiguration jaringan yang umum, read-only, dan bernilai tinggi.
 
 ### 32.1 Exposed Service Checks
-- [ ] 🔴 Redis unauthenticated exposure check
-- [ ] 🔴 Elasticsearch unauthenticated exposure check
-- [ ] 🔴 MongoDB unauthenticated exposure check
-- [ ] 🔴 Memcached exposed check
-- [ ] 🔴 PostgreSQL/MySQL/MSSQL public exposure + auth-required + transport encryption checks
-- [ ] 🔴 Naikkan kombinasi public database + no TLS + password authentication menjadi finding terverifikasi tanpa credential guessing
-- [ ] 🟡 Bedakan database yang ditolak firewall/ACL, ditolak `pg_hba.conf`, dan menerima proses autentikasi
-- [ ] 🟡 Ambil version/auth capability secara read-only tanpa brute force atau login attempt dengan akun nyata
-- [ ] 🟡 MQTT anonymous access signal
-- [ ] 🟡 RabbitMQ management exposure signal
+- [x] 🔴 Redis unauthenticated exposure check
+- [x] 🔴 Elasticsearch unauthenticated exposure check
+- [x] 🔴 MongoDB unauthenticated exposure check
+- [x] 🔴 Memcached exposed check
+- [x] 🔴 PostgreSQL/MySQL/MSSQL public exposure + auth-required + transport encryption checks
+- [x] 🔴 Naikkan kombinasi public database + no TLS + password authentication menjadi finding terverifikasi tanpa credential guessing
+- [x] 🟡 Bedakan database yang ditolak firewall/ACL, ditolak `pg_hba.conf`, dan menerima proses autentikasi
+- [x] 🟡 Ambil version/auth capability secara read-only tanpa brute force atau login attempt dengan akun nyata
+- [x] 🟡 MQTT anonymous access signal
+- [x] 🟡 RabbitMQ management exposure signal
 
 ### 32.2 TLS & PKI Deep Checks
-- [ ] 🔴 Certificate expiry, hostname mismatch, self-signed, weak signature algorithm
-- [ ] 🟡 Protocol support matrix: TLS 1.0/1.1/1.2/1.3
-- [ ] 🟡 Weak cipher and insecure renegotiation signal jika library mendukung
-- [ ] 🟢 Report certificate chain summary dan SAN inventory
+- [x] 🔴 Certificate expiry, hostname mismatch, self-signed, weak signature algorithm
+- [x] 🟡 Protocol support matrix: TLS 1.0/1.1/1.2/1.3
+- [x] 🟡 Weak cipher and insecure renegotiation signal jika library mendukung
+- [x] 🟢 Report certificate chain summary dan SAN inventory
 
 ### 32.3 Mail & Remote Access Checks
-- [ ] 🟡 SMTP open relay safe test dengan no-delivery pattern
-- [ ] 🟡 SMTP STARTTLS and banner leakage checks
-- [ ] 🟡 RDP/NLA exposure signal
-- [ ] 🟡 SMB signing requirement signal
-- [ ] 🟢 FTP anonymous login check hanya jika user mengaktifkan `--allow-risky-rules`
+- [x] 🟡 SMTP open relay safe test dengan no-delivery pattern
+- [x] 🟡 SMTP STARTTLS and banner leakage checks
+- [x] 🟡 RDP/NLA exposure signal
+- [x] 🟡 SMB signing requirement signal
+- [x] 🟢 FTP anonymous login check hanya jika user mengaktifkan `--allow-risky-rules`
+
+**Catatan implementasi:** Probe TLS memakai `rustls` untuk handshake aman dan
+matrix protocol eksplisit. Temu melaporkan cipher/renegotiation lemah jika dapat
+diobservasi, tetapi tidak memaksa negosiasi cipher lemah. Semua probe database dan
+mail bersifat read-only; SMTP open-relay probe berhenti sebelum perintah `DATA`.
 
 ### 🏁 Sprint 32 — Definition of Done
 - Temu punya baseline network misconfiguration checks lintas service populer

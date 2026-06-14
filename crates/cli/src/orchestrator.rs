@@ -5,7 +5,7 @@ use std::path::Path;
 use chrono::Utc;
 use discovery::{
     DiscoveryMode, PortResult, default_top_ports, run_api_discovery, run_browser_crawl,
-    run_discovery, scan_ports,
+    run_discovery, scan_ports, scan_ports_named,
 };
 use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
@@ -613,15 +613,7 @@ async fn run_port_scan_for_domain(
         return (Vec::new(), Vec::new(), Vec::new());
     };
 
-    run_port_scan_for_ip(ip, ports, config).await
-}
-
-async fn run_port_scan_for_ip(
-    ip: IpAddr,
-    ports: &[u16],
-    config: &AppConfig,
-) -> (Vec<Asset>, Vec<(String, TechStack)>, Vec<ServiceEvidence>) {
-    let results = scan_ports(ip, ports, config).await;
+    let results = scan_ports_named(ip, ports, config, Some(domain)).await;
     let items = report_items_from_port_results(ip, &results);
     (items.assets, items.techs, items.services)
 }
@@ -859,6 +851,7 @@ mod tests {
             handshake: None,
             auth_required: None,
             tls: None,
+            signals: Vec::new(),
         })
         .unwrap();
         assert_eq!(tech.name, "OpenSSH");

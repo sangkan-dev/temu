@@ -4,13 +4,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
 use temu_core::{AppConfig, ServiceEvidence, TlsEvidence};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, timeout};
+use tokio_rustls::TlsConnector;
 use tracing::{debug, warn};
+use x509_parser::extensions::GeneralName;
+use x509_parser::prelude::{FromDer, X509Certificate};
 
 const CONNECT_TIMEOUT_SECS: u64 = 3;
 const GREETING_TIMEOUT_MILLIS: u64 = 250;
@@ -46,6 +52,8 @@ pub struct PortResult {
     pub handshake: Option<String>,
     pub auth_required: Option<bool>,
     pub tls: Option<TlsEvidence>,
+    #[serde(default)]
+    pub signals: Vec<String>,
 }
 
 impl PortResult {
@@ -68,6 +76,7 @@ impl PortResult {
             handshake: self.handshake.clone(),
             auth_required: self.auth_required,
             tls: self.tls.clone(),
+            signals: self.signals.clone(),
         })
     }
 }
@@ -81,6 +90,7 @@ struct ServiceProfile {
     banner: Option<String>,
     handshake: Option<String>,
     auth_required: Option<bool>,
+    signals: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -153,13 +163,26 @@ pub fn parse_ports(input: &str) -> Result<Vec<u16>, String> {
 
 /// Scans TCP ports and collects protocol evidence under per-host safety budgets.
 pub async fn scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<PortResult> {
+    scan_ports_named(ip, ports, config, None).await
+}
+
+/// Scans TCP ports and uses an optional DNS name for certificate hostname checks.
+pub async fn scan_ports_named(
+    ip: IpAddr,
+    ports: &[u16],
+    config: &AppConfig,
+    server_name: Option<&str>,
+) -> Vec<PortResult> {
     let semaphore = Arc::new(Semaphore::new(config.concurrency.max(1)));
     let budget = Arc::new(ConnectionBudget::new(config));
+    let allow_risky_probes = config.allow_risky_rules;
+    let server_name = server_name.map(str::to_string);
     let mut handles = Vec::with_capacity(ports.len());
 
     for &port in ports {
         let sem = Arc::clone(&semaphore);
         let budget = Arc::clone(&budget);
+        let server_name = server_name.clone();
         handles.push(tokio::spawn(async move {
             let Ok(_permit) = sem.acquire().await else {
                 return filtered_result(port);
@@ -167,7 +190,7 @@ pub async fn scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<Po
             if !budget.reserve() {
                 return filtered_result(port);
             }
-            scan_one_port(ip, port, budget).await
+            scan_one_port(ip, port, budget, allow_risky_probes, server_name.as_deref()).await
         }));
     }
 
@@ -191,7 +214,13 @@ pub async fn scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<Po
     results
 }
 
-async fn scan_one_port(ip: IpAddr, port: u16, budget: Arc<ConnectionBudget>) -> PortResult {
+async fn scan_one_port(
+    ip: IpAddr,
+    port: u16,
+    budget: Arc<ConnectionBudget>,
+    allow_risky_probes: bool,
+    server_name: Option<&str>,
+) -> PortResult {
     let addr = SocketAddr::new(ip, port);
     debug!("Port scanning {addr}");
 
@@ -206,11 +235,30 @@ async fn scan_one_port(ip: IpAddr, port: u16, budget: Arc<ConnectionBudget>) -> 
 
     let bytes = profile_response(&mut stream, port).await;
     let mut profile = parse_service_profile(port, &bytes);
-    let tls = if budget.reserve() {
+    let mut tls = if budget.reserve() {
         probe_tls(ip, port).await
     } else {
         None
     };
+    if (tls.is_some() || likely_tls_port(port))
+        && budget.reserve()
+        && let Some(certificate_evidence) = probe_tls_certificate(ip, port, server_name).await
+    {
+        tls = Some(certificate_evidence);
+    }
+    if let Some(evidence) = tls.as_mut() {
+        for (name, minor) in [("TLS 1.0", 0x01), ("TLS 1.1", 0x02), ("TLS 1.2", 0x03)] {
+            if budget.reserve()
+                && probe_tls_version(ip, port, minor).await
+                && !evidence
+                    .supported_versions
+                    .iter()
+                    .any(|value| value == name)
+            {
+                evidence.supported_versions.push(name.to_string());
+            }
+        }
+    }
     if tls.as_ref().is_some_and(|evidence| evidence.detected)
         && matches!(
             profile.protocol.as_deref(),
@@ -223,8 +271,40 @@ async fn scan_one_port(ip: IpAddr, port: u16, budget: Arc<ConnectionBudget>) -> 
             .get_or_insert_with(|| "TLS service".to_string());
         profile.confidence = profile.confidence.max(0.90);
     }
+    if tls.as_ref().is_some_and(|evidence| evidence.detected) {
+        push_signal(&mut profile, "tls_detected");
+        if tls.as_ref().is_some_and(|evidence| {
+            evidence
+                .supported_versions
+                .iter()
+                .any(|version| matches!(version.as_str(), "TLS 1.0" | "TLS 1.1"))
+        }) {
+            push_signal(&mut profile, "legacy_tls_accepted");
+        }
+        if tls.as_ref().and_then(|evidence| evidence.self_signed) == Some(true) {
+            push_signal(&mut profile, "tls_self_signed");
+        }
+        if tls.as_ref().and_then(|evidence| evidence.hostname_mismatch) == Some(true) {
+            push_signal(&mut profile, "tls_hostname_mismatch");
+        }
+        if tls
+            .as_ref()
+            .and_then(|evidence| evidence.signature_algorithm.as_deref())
+            .is_some_and(weak_signature_algorithm)
+        {
+            push_signal(&mut profile, "tls_weak_signature");
+        }
+        if tls
+            .as_ref()
+            .and_then(|evidence| evidence.certificate_not_after.as_deref())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .is_some_and(|expiry| expiry < chrono::Utc::now())
+        {
+            push_signal(&mut profile, "tls_certificate_expired");
+        }
+    }
     if profile.protocol.is_none() {
-        profile = probe_unknown_service(ip, port, budget)
+        profile = probe_unknown_service(ip, port, Arc::clone(&budget))
             .await
             .unwrap_or(profile);
     }
@@ -236,6 +316,15 @@ async fn scan_one_port(ip: IpAddr, port: u16, budget: Arc<ConnectionBudget>) -> 
             0.10
         };
     }
+    enrich_service_profile(ip, port, &mut profile, &budget, allow_risky_probes).await;
+    push_signal(
+        &mut profile,
+        if is_publicly_routable(ip) {
+            "publicly_routable"
+        } else {
+            "private_or_local"
+        },
+    );
 
     PortResult {
         port,
@@ -248,6 +337,7 @@ async fn scan_one_port(ip: IpAddr, port: u16, budget: Arc<ConnectionBudget>) -> 
         handshake: profile.handshake,
         auth_required: profile.auth_required,
         tls,
+        signals: profile.signals,
     }
 }
 
@@ -322,6 +412,180 @@ async fn probe_tls(ip: IpAddr, port: u16) -> Option<TlsEvidence> {
     parse_tls_response(&response[..size])
 }
 
+async fn probe_tls_version(ip: IpAddr, port: u16, minor_version: u8) -> bool {
+    let mut hello = TLS_CLIENT_HELLO.to_vec();
+    hello[2] = minor_version;
+    hello[10] = minor_version;
+    let Some(mut stream) = connect(ip, port).await else {
+        return false;
+    };
+    if write_probe(&mut stream, &hello).await.is_none() {
+        return false;
+    }
+    let response = read_response(&mut stream).await;
+    response.first() == Some(&0x16)
+}
+
+#[derive(Debug)]
+struct EvidenceOnlyCertificateVerifier;
+
+impl ServerCertVerifier for EvidenceOnlyCertificateVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
+    }
+}
+
+async fn probe_tls_certificate(
+    ip: IpAddr,
+    port: u16,
+    expected_hostname: Option<&str>,
+) -> Option<TlsEvidence> {
+    let stream = connect(ip, port).await?;
+    let config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(EvidenceOnlyCertificateVerifier))
+        .with_no_client_auth();
+    let connector = TlsConnector::from(Arc::new(config));
+    let name =
+        ServerName::try_from(expected_hostname.unwrap_or(&ip.to_string()).to_string()).ok()?;
+    let tls_stream = timeout(
+        Duration::from_secs(RESPONSE_TIMEOUT_SECS),
+        connector.connect(name, stream),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let connection = tls_stream.get_ref().1;
+    let certificates = connection.peer_certificates()?;
+    let leaf = certificates.first()?;
+    let (_, certificate) = X509Certificate::from_der(leaf.as_ref()).ok()?;
+    let subject = certificate.subject().to_string();
+    let issuer = certificate.issuer().to_string();
+    let signature_algorithm = certificate.signature_algorithm.algorithm.to_id_string();
+    let subject_alt_names = certificate
+        .subject_alternative_name()
+        .ok()
+        .flatten()
+        .map(|extension| {
+            extension
+                .value
+                .general_names
+                .iter()
+                .filter_map(|name| match name {
+                    GeneralName::DNSName(name) => Some((*name).to_string()),
+                    GeneralName::IPAddress(bytes) => Some(
+                        bytes
+                            .iter()
+                            .map(|byte| byte.to_string())
+                            .collect::<Vec<_>>()
+                            .join("."),
+                    ),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let hostname_mismatch = expected_hostname.map(|hostname| {
+        !subject_alt_names
+            .iter()
+            .any(|candidate| hostname_matches(hostname, candidate))
+    });
+    let protocol_version = connection.protocol_version().map(|version| match version {
+        rustls::ProtocolVersion::TLSv1_2 => "TLS 1.2".to_string(),
+        rustls::ProtocolVersion::TLSv1_3 => "TLS 1.3".to_string(),
+        _ => format!("{version:?}"),
+    });
+    let cipher_suite = connection
+        .negotiated_cipher_suite()
+        .map(|suite| format!("{:?}", suite.suite()));
+
+    Some(TlsEvidence {
+        detected: true,
+        supported_versions: protocol_version.clone().into_iter().collect(),
+        protocol_version,
+        cipher_suite,
+        certificate_subject: Some(subject.clone()),
+        certificate_issuer: Some(issuer.clone()),
+        certificate_not_after: chrono::DateTime::from_timestamp(
+            certificate.validity().not_after.timestamp(),
+            0,
+        )
+        .map(|value| value.to_rfc3339()),
+        signature_algorithm: Some(signature_algorithm),
+        subject_alt_names,
+        certificate_chain_length: certificates.len(),
+        self_signed: Some(subject == issuer),
+        hostname_mismatch,
+    })
+}
+
+fn hostname_matches(hostname: &str, certificate_name: &str) -> bool {
+    if hostname.eq_ignore_ascii_case(certificate_name) {
+        return true;
+    }
+    let Some(suffix) = certificate_name.strip_prefix("*.") else {
+        return false;
+    };
+    let hostname = hostname.to_ascii_lowercase();
+    let suffix = suffix.to_ascii_lowercase();
+    hostname.ends_with(&format!(".{suffix}"))
+        && hostname
+            .trim_end_matches(&format!(".{suffix}"))
+            .split('.')
+            .count()
+            == 1
+}
+
+fn weak_signature_algorithm(algorithm: &str) -> bool {
+    matches!(
+        algorithm,
+        "1.2.840.113549.1.1.4" | "1.2.840.113549.1.1.5" | "1.2.840.10045.4.1"
+    )
+}
+
 async fn probe_unknown_service(
     ip: IpAddr,
     port: u16,
@@ -369,6 +633,229 @@ async fn probe_once(ip: IpAddr, port: u16, probe: &[u8]) -> Vec<u8> {
     response
 }
 
+async fn enrich_service_profile(
+    ip: IpAddr,
+    port: u16,
+    profile: &mut ServiceProfile,
+    budget: &Arc<ConnectionBudget>,
+    allow_risky_probes: bool,
+) {
+    match profile.protocol.as_deref() {
+        Some("postgresql") if budget.reserve() => {
+            let response = probe_once(ip, port, &postgres_startup_probe()).await;
+            let text = sanitize_banner(&response);
+            if response.first() == Some(&b'R') {
+                profile.auth_required = Some(true);
+                push_signal(profile, "auth_exchange_available");
+            } else if response.first() == Some(&b'E') {
+                if text.to_ascii_lowercase().contains("pg_hba.conf") {
+                    push_signal(profile, "pg_hba_rejected");
+                } else {
+                    push_signal(profile, "startup_rejected");
+                }
+            }
+            append_handshake(profile, &text);
+        }
+        Some("smtp") if budget.reserve() => {
+            push_signal(profile, "smtp_banner_exposed");
+            if let Some(summary) = probe_smtp(ip, port).await {
+                if summary.to_ascii_lowercase().contains("starttls") {
+                    push_signal(profile, "starttls_supported");
+                } else {
+                    push_signal(profile, "starttls_not_advertised");
+                }
+                if summary.contains("relay_probe=accepted") {
+                    push_signal(profile, "open_relay_no_delivery_accepted");
+                }
+                append_handshake(profile, &summary);
+            }
+        }
+        Some("ftp") if allow_risky_probes && budget.reserve() => {
+            if let Some(summary) = probe_ftp_anonymous(ip, port).await {
+                if summary.contains("anonymous_login=accepted") {
+                    push_signal(profile, "anonymous_login_accepted");
+                }
+                append_handshake(profile, &summary);
+            }
+        }
+        Some("elasticsearch")
+            if profile
+                .handshake
+                .as_deref()
+                .is_some_and(|value| value.to_ascii_lowercase().contains("200 ok")) =>
+        {
+            profile.auth_required = Some(false);
+            push_signal(profile, "unauthenticated_api_response");
+        }
+        Some("mongodb") if budget.reserve() => {
+            let response = probe_once(ip, port, &mongo_list_databases_probe()).await;
+            let text = sanitize_banner(&response);
+            let lower = text.to_ascii_lowercase();
+            if lower.contains("databases") && !lower.contains("unauthorized") {
+                profile.auth_required = Some(false);
+                push_signal(profile, "unauthenticated_database_listing");
+            } else if lower.contains("unauthorized") || lower.contains("requires authentication") {
+                profile.auth_required = Some(true);
+                push_signal(profile, "auth_required");
+            }
+            append_handshake(profile, &text);
+        }
+        Some("http") if port == 15672 => {
+            profile.product = Some("RabbitMQ Management".to_string());
+            push_signal(profile, "management_interface_exposed");
+        }
+        _ => {}
+    }
+}
+
+async fn probe_smtp(ip: IpAddr, port: u16) -> Option<String> {
+    let mut stream = connect(ip, port).await?;
+    let greeting = read_response(&mut stream).await;
+    write_probe(&mut stream, b"EHLO temu.invalid\r\n").await?;
+    let ehlo = read_response(&mut stream).await;
+    write_probe(&mut stream, b"MAIL FROM:<>\r\n").await?;
+    let mail = read_response(&mut stream).await;
+    write_probe(&mut stream, b"RCPT TO:<temu-probe@temu.invalid>\r\n").await?;
+    let recipient = read_response(&mut stream).await;
+    let _ = write_probe(&mut stream, b"RSET\r\nQUIT\r\n").await;
+    let relay_accepted = smtp_success(&mail) && smtp_success(&recipient);
+    Some(format!(
+        "greeting={} ehlo={} relay_probe={}",
+        sanitize_banner(&greeting),
+        sanitize_banner(&ehlo),
+        if relay_accepted {
+            "accepted"
+        } else {
+            "rejected"
+        }
+    ))
+}
+
+async fn probe_ftp_anonymous(ip: IpAddr, port: u16) -> Option<String> {
+    let mut stream = connect(ip, port).await?;
+    let _ = read_response(&mut stream).await;
+    write_probe(&mut stream, b"USER anonymous\r\n").await?;
+    let user = read_response(&mut stream).await;
+    write_probe(&mut stream, b"PASS temu@invalid\r\n").await?;
+    let pass = read_response(&mut stream).await;
+    let _ = write_probe(&mut stream, b"QUIT\r\n").await;
+    Some(format!(
+        "anonymous_login={} user_response={} pass_response={}",
+        if pass.starts_with(b"230") {
+            "accepted"
+        } else {
+            "rejected"
+        },
+        sanitize_banner(&user),
+        sanitize_banner(&pass)
+    ))
+}
+
+async fn connect(ip: IpAddr, port: u16) -> Option<TcpStream> {
+    timeout(
+        Duration::from_secs(CONNECT_TIMEOUT_SECS),
+        TcpStream::connect(SocketAddr::new(ip, port)),
+    )
+    .await
+    .ok()?
+    .ok()
+}
+
+async fn write_probe(stream: &mut TcpStream, probe: &[u8]) -> Option<()> {
+    timeout(Duration::from_secs(1), stream.write_all(probe))
+        .await
+        .ok()?
+        .ok()
+}
+
+async fn read_response(stream: &mut TcpStream) -> Vec<u8> {
+    let mut response = vec![0_u8; MAX_BANNER_BYTES];
+    let Ok(Ok(size)) = timeout(
+        Duration::from_secs(RESPONSE_TIMEOUT_SECS),
+        stream.read(&mut response),
+    )
+    .await
+    else {
+        return Vec::new();
+    };
+    response.truncate(size);
+    response
+}
+
+fn smtp_success(response: &[u8]) -> bool {
+    matches!(response.first(), Some(b'2'))
+}
+
+fn postgres_startup_probe() -> Vec<u8> {
+    let mut packet = vec![0, 0, 0, 0, 0, 3, 0, 0];
+    packet.extend_from_slice(b"user\0temu_probe\0database\0temu_probe\0application_name\0temu\0\0");
+    let length = (packet.len() as u32).to_be_bytes();
+    packet[..4].copy_from_slice(&length);
+    packet
+}
+
+fn mongo_list_databases_probe() -> Vec<u8> {
+    let mut document = vec![0, 0, 0, 0];
+    document.push(0x10);
+    document.extend_from_slice(b"listDatabases\0");
+    document.extend_from_slice(&1_i32.to_le_bytes());
+    document.push(0x02);
+    document.extend_from_slice(b"$db\0");
+    document.extend_from_slice(&6_i32.to_le_bytes());
+    document.extend_from_slice(b"admin\0");
+    document.push(0);
+    let document_length = (document.len() as i32).to_le_bytes();
+    document[..4].copy_from_slice(&document_length);
+
+    let mut message = vec![0, 0, 0, 0];
+    message.extend_from_slice(&1_i32.to_le_bytes());
+    message.extend_from_slice(&0_i32.to_le_bytes());
+    message.extend_from_slice(&2013_i32.to_le_bytes());
+    message.extend_from_slice(&0_u32.to_le_bytes());
+    message.push(0);
+    message.extend_from_slice(&document);
+    let message_length = (message.len() as i32).to_le_bytes();
+    message[..4].copy_from_slice(&message_length);
+    message
+}
+
+fn append_handshake(profile: &mut ServiceProfile, evidence: &str) {
+    if evidence.is_empty() {
+        return;
+    }
+    profile.handshake = Some(match profile.handshake.take() {
+        Some(existing) => format!("{existing}; {evidence}"),
+        None => evidence.to_string(),
+    });
+}
+
+fn push_signal(profile: &mut ServiceProfile, signal: &str) {
+    if !profile.signals.iter().any(|value| value == signal) {
+        profile.signals.push(signal.to_string());
+    }
+}
+
+fn is_publicly_routable(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                || ip.is_unspecified())
+        }
+        IpAddr::V6(ip) => !(ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local()),
+    }
+}
+
+fn likely_tls_port(port: u16) -> bool {
+    matches!(
+        port,
+        443 | 465 | 636 | 853 | 990 | 993 | 995 | 5671 | 8443 | 8883
+    )
+}
+
 fn parse_tls_response(response: &[u8]) -> Option<TlsEvidence> {
     if response.len() < 5 || !matches!(response[0], 0x15 | 0x16) || response[1] != 0x03 {
         return None;
@@ -386,6 +873,15 @@ fn parse_tls_response(response: &[u8]) -> Option<TlsEvidence> {
         detected: true,
         protocol_version: Some(protocol_version.to_string()),
         cipher_suite,
+        supported_versions: vec![protocol_version.to_string()],
+        certificate_subject: None,
+        certificate_issuer: None,
+        certificate_not_after: None,
+        signature_algorithm: None,
+        subject_alt_names: Vec::new(),
+        certificate_chain_length: 0,
+        self_signed: None,
+        hostname_mismatch: None,
     })
 }
 
@@ -393,9 +889,10 @@ fn protocol_probe(port: u16) -> &'static [u8] {
     match port {
         21 => b"FEAT\r\n",
         25 | 465 | 587 => b"EHLO temu.local\r\n",
-        80 | 81 | 443 | 3000 | 8000 | 8008 | 8080 | 8081 | 8443 | 8888 | 9200 | 15672 => {
+        80 | 81 | 443 | 3000 | 8000 | 8008 | 8080 | 8081 | 8443 | 8888 | 15672 => {
             b"HEAD / HTTP/1.0\r\nUser-Agent: Temu/1.5.0\r\n\r\n"
         }
+        9200 => b"GET / HTTP/1.0\r\nUser-Agent: Temu/1.5.0\r\n\r\n",
         110 | 995 => b"CAPA\r\n",
         143 | 993 => b"a001 CAPABILITY\r\n",
         445 => b"\x00\x00\x00\x54\xfeSMB@\x00",
@@ -467,6 +964,11 @@ fn parse_service_profile(port: u16, bytes: &[u8]) -> ServiceProfile {
         profile.protocol = Some("redis".to_string());
         profile.product = Some("Redis".to_string());
         profile.auth_required = Some(lower.contains("noauth"));
+        if lower.starts_with("+pong") {
+            push_signal(&mut profile, "unauthenticated_command_accepted");
+        } else if lower.contains("noauth") {
+            push_signal(&mut profile, "auth_required");
+        }
         profile.confidence = 0.98;
     } else if lower.starts_with("version ") || lower.contains("memcached") {
         profile.protocol = Some("memcached".to_string());
@@ -478,15 +980,30 @@ fn parse_service_profile(port: u16, bytes: &[u8]) -> ServiceProfile {
                     .next()
             })
             .map(str::to_string);
+        push_signal(&mut profile, "unauthenticated_command_accepted");
         profile.confidence = 0.98;
-    } else if bytes.first() == Some(&0x0a) && port == 3306 {
+    } else if mysql_protocol_offset(bytes).is_some() && port == 3306 {
         profile.protocol = Some("mysql".to_string());
         profile.product = Some("MySQL".to_string());
         profile.version = mysql_version(bytes);
+        profile.auth_required = Some(true);
+        push_signal(&mut profile, "auth_exchange_available");
+        if mysql_supports_tls(bytes) {
+            push_signal(&mut profile, "tls_supported");
+        } else {
+            push_signal(&mut profile, "tls_not_supported");
+        }
         profile.confidence = 0.98;
     } else if matches!(bytes.first(), Some(b'S' | b'N' | b'E')) && bytes.len() <= 8 {
         profile.protocol = Some("postgresql".to_string());
         profile.product = Some("PostgreSQL".to_string());
+        if bytes.first() == Some(&b'S') {
+            push_signal(&mut profile, "tls_supported");
+        } else if bytes.first() == Some(&b'N') {
+            push_signal(&mut profile, "tls_not_supported");
+        } else {
+            push_signal(&mut profile, "startup_rejected");
+        }
         profile.confidence = 0.92;
     } else if bytes.starts_with(b"AMQP") || lower.contains("rabbitmq") {
         profile.protocol = Some("amqp".to_string());
@@ -499,10 +1016,19 @@ fn parse_service_profile(port: u16, bytes: &[u8]) -> ServiceProfile {
             .get(3)
             .copied()
             .map(|code| code == 0x04 || code == 0x05);
+        if profile.auth_required == Some(false) {
+            push_signal(&mut profile, "anonymous_connection_accepted");
+        }
         profile.confidence = 0.95;
     } else if bytes.starts_with(&[0x03, 0x00]) {
         profile.protocol = Some("rdp".to_string());
         profile.product = Some("RDP".to_string());
+        match rdp_selected_protocol(bytes) {
+            Some(0) => push_signal(&mut profile, "nla_not_required"),
+            Some(2) | Some(8) => push_signal(&mut profile, "nla_required"),
+            Some(_) => push_signal(&mut profile, "tls_transport_selected"),
+            None => {}
+        }
         profile.confidence = 0.93;
     } else if bytes
         .windows(4)
@@ -510,10 +1036,22 @@ fn parse_service_profile(port: u16, bytes: &[u8]) -> ServiceProfile {
     {
         profile.protocol = Some("smb".to_string());
         profile.product = Some("SMB".to_string());
+        match smb_signing_required(bytes) {
+            Some(true) => push_signal(&mut profile, "smb_signing_required"),
+            Some(false) => push_signal(&mut profile, "smb_signing_not_required"),
+            None => {}
+        }
         profile.confidence = 0.95;
     } else if bytes.first() == Some(&0x04) {
         profile.protocol = Some("mssql".to_string());
         profile.product = Some("Microsoft SQL Server".to_string());
+        profile.auth_required = Some(true);
+        push_signal(&mut profile, "auth_exchange_available");
+        match mssql_encryption_mode(bytes) {
+            Some(0) | Some(2) => push_signal(&mut profile, "tls_not_supported"),
+            Some(1) | Some(3) => push_signal(&mut profile, "tls_supported"),
+            _ => {}
+        }
         profile.confidence = 0.90;
     } else if bytes
         .get(12..16)
@@ -536,6 +1074,13 @@ fn parse_service_profile(port: u16, bytes: &[u8]) -> ServiceProfile {
             .as_deref()
             .and_then(|product| substring_version(&banner, &format!("{product}/")));
         profile.confidence = 0.90;
+        if port == 9200 && lower.contains("200 ok") {
+            profile.auth_required = Some(false);
+            push_signal(&mut profile, "unauthenticated_api_response");
+        } else if port == 9200 && lower.contains("401") {
+            profile.auth_required = Some(true);
+            push_signal(&mut profile, "auth_required");
+        }
     }
     profile
 }
@@ -572,10 +1117,65 @@ fn service_from_port(port: u16) -> Option<&'static str> {
 }
 
 fn mysql_version(bytes: &[u8]) -> Option<String> {
-    let remaining = bytes.get(1..)?;
+    let offset = mysql_protocol_offset(bytes)?;
+    let remaining = bytes.get(offset + 1..)?;
     let end = remaining.iter().position(|byte| *byte == 0)?;
     let value = sanitize_banner(&remaining[..end]);
     (!value.is_empty()).then_some(value)
+}
+
+fn mysql_protocol_offset(bytes: &[u8]) -> Option<usize> {
+    if bytes.first() == Some(&0x0a) {
+        Some(0)
+    } else if bytes.get(4) == Some(&0x0a) {
+        Some(4)
+    } else {
+        None
+    }
+}
+
+fn mysql_supports_tls(bytes: &[u8]) -> bool {
+    let Some(offset) = mysql_protocol_offset(bytes) else {
+        return false;
+    };
+    let Some(version_end) = bytes
+        .get(offset + 1..)
+        .and_then(|value| value.iter().position(|byte| *byte == 0))
+    else {
+        return false;
+    };
+    let capability_offset = offset + 1 + version_end + 1 + 4 + 8 + 1;
+    let Some(flags) = bytes.get(capability_offset..capability_offset + 2) else {
+        return false;
+    };
+    u16::from_le_bytes([flags[0], flags[1]]) & 0x0800 != 0
+}
+
+fn rdp_selected_protocol(bytes: &[u8]) -> Option<u32> {
+    let index = bytes.iter().position(|byte| *byte == 0x02)?;
+    let selected = bytes.get(index + 4..index + 8)?;
+    Some(u32::from_le_bytes(selected.try_into().ok()?))
+}
+
+fn smb_signing_required(bytes: &[u8]) -> Option<bool> {
+    let smb = bytes.windows(4).position(|part| part == b"\xfeSMB")?;
+    let security_mode = bytes.get(smb + 66..smb + 68)?;
+    Some(u16::from_le_bytes(security_mode.try_into().ok()?) & 0x0002 != 0)
+}
+
+fn mssql_encryption_mode(bytes: &[u8]) -> Option<u8> {
+    let payload = bytes.get(8..)?;
+    for entry in payload.chunks_exact(5) {
+        if entry[0] == 0xff {
+            break;
+        }
+        if entry[0] != 0x01 {
+            continue;
+        }
+        let offset = u16::from_be_bytes([entry[1], entry[2]]) as usize;
+        return payload.get(offset).copied();
+    }
+    None
 }
 
 fn http_product(banner: &str) -> Option<String> {
@@ -663,6 +1263,7 @@ fn empty_result(port: u16, state: PortState) -> PortResult {
         handshake: None,
         auth_required: None,
         tls: None,
+        signals: Vec::new(),
     }
 }
 
@@ -737,10 +1338,17 @@ mod tests {
         let redis = parse_service_profile(16379, b"-NOAUTH Authentication required.\r\n");
         assert_eq!(redis.protocol.as_deref(), Some("redis"));
         assert_eq!(redis.auth_required, Some(true));
+        assert!(redis.signals.contains(&"auth_required".to_string()));
         let memcached = parse_service_profile(11211, b"VERSION 1.6.22\r\n");
         assert_eq!(memcached.version.as_deref(), Some("1.6.22"));
+        assert!(
+            memcached
+                .signals
+                .contains(&"unauthenticated_command_accepted".to_string())
+        );
         let mysql = parse_service_profile(3306, b"\x0a8.0.36\0fixture");
         assert_eq!(mysql.version.as_deref(), Some("8.0.36"));
+        assert_eq!(mysql.auth_required, Some(true));
         let mqtt = parse_service_profile(1883, &[0x20, 0x02, 0x00, 0x05]);
         assert_eq!(mqtt.protocol.as_deref(), Some("mqtt"));
         let mut mongo = vec![0_u8; 16];
@@ -749,6 +1357,39 @@ mod tests {
             parse_service_profile(27018, &mongo).protocol.as_deref(),
             Some("mongodb")
         );
+    }
+
+    #[test]
+    fn test_postgres_startup_probe_is_well_formed() {
+        let probe = postgres_startup_probe();
+        assert_eq!(
+            u32::from_be_bytes(probe[..4].try_into().unwrap()) as usize,
+            probe.len()
+        );
+        assert_eq!(&probe[4..8], &[0, 3, 0, 0]);
+        assert!(probe.windows(10).any(|value| value == b"temu_probe"));
+    }
+
+    #[test]
+    fn test_public_routability_excludes_private_and_documentation_ranges() {
+        assert!(!is_publicly_routable(IpAddr::from([127, 0, 0, 1])));
+        assert!(!is_publicly_routable(IpAddr::from([10, 0, 0, 1])));
+        assert!(!is_publicly_routable(IpAddr::from([192, 0, 2, 1])));
+        assert!(is_publicly_routable(IpAddr::from([8, 8, 8, 8])));
+    }
+
+    #[test]
+    fn test_hostname_matching_supports_single_label_wildcard() {
+        assert!(hostname_matches("api.example.com", "*.example.com"));
+        assert!(!hostname_matches("deep.api.example.com", "*.example.com"));
+        assert!(!hostname_matches("example.net", "*.example.com"));
+    }
+
+    #[test]
+    fn test_weak_signature_algorithm_identifies_sha1_and_md5_oids() {
+        assert!(weak_signature_algorithm("1.2.840.113549.1.1.5"));
+        assert!(weak_signature_algorithm("1.2.840.113549.1.1.4"));
+        assert!(!weak_signature_algorithm("1.2.840.113549.1.1.11"));
     }
 
     #[test]
@@ -803,5 +1444,11 @@ mod tests {
 
         assert_eq!(results[0].service.as_deref(), Some("redis"));
         assert_eq!(results[0].auth_required, Some(false));
+        assert!(
+            results[0]
+                .signals
+                .contains(&"unauthenticated_command_accepted".to_string())
+        );
+        assert!(results[0].signals.contains(&"private_or_local".to_string()));
     }
 }

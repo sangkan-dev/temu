@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-POSTGRESQL-PG-HBA-REJECTED"
+name: "Public PostgreSQL listener rejects the probe through pg_hba.conf"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["postgresql"]
+severity: info
+cvss: 0.0
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["publicly_routable", "pg_hba_rejected"]
+remediation: "Keep pg_hba.conf restrictive and additionally filter the public listener at the network layer."
+references:
+  - "https://www.postgresql.org/docs/current/auth-pg-hba-conf.html"

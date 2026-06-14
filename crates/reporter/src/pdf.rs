@@ -444,21 +444,36 @@ impl PdfReport {
                     .tls
                     .as_ref()
                     .filter(|tls| tls.detected)
-                    .and_then(|tls| tls.protocol_version.as_deref())
-                    .unwrap_or("no TLS observed");
+                    .map(|tls| {
+                        let versions = if tls.supported_versions.is_empty() {
+                            tls.protocol_version
+                                .clone()
+                                .unwrap_or_else(|| "TLS".to_string())
+                        } else {
+                            tls.supported_versions.join(", ")
+                        };
+                        format!(
+                            "{} | chain={} | SANs={}",
+                            versions,
+                            tls.certificate_chain_length,
+                            tls.subject_alt_names.join(",")
+                        )
+                    })
+                    .unwrap_or_else(|| "no TLS observed".to_string());
                 let evidence = crate::redaction::redact_sensitive_text(
                     service.handshake.as_deref().unwrap_or("-"),
                 );
                 y = self.wrapped_text(
                     layer,
                     &format!(
-                        "{} | {} / {} {} | confidence {:.0}% | TLS: {} | {}",
+                        "{} | {} / {} {} | confidence {:.0}% | TLS: {} | signals: {} | {}",
                         service.endpoint,
                         service.protocol,
                         service.product.as_deref().unwrap_or("unknown"),
                         service.version.as_deref().unwrap_or("-"),
                         service.confidence * 100.0,
                         tls,
+                        service.signals.join(","),
                         evidence
                     ),
                     8.5,

@@ -1,0 +1,21 @@
+schema_version: "1"
+rule_type: network
+id: "NETWORK-RDP-NLA-NOT-REQUIRED"
+name: "RDP service does not require Network Level Authentication"
+metadata:
+  author: "sangkan-dev"
+  license: "MIT"
+  last_verified: "2026-06-14"
+compatibility:
+  minimum_temu_version: "1.5.0"
+  required_capabilities: ["network_service"]
+protocols: ["rdp"]
+severity: high
+cvss: 7.5
+risk_level: safe
+requires_confirmation: false
+matcher:
+  required_signals: ["nla_not_required"]
+remediation: "Require Network Level Authentication and restrict RDP exposure."
+references:
+  - "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/clients/remote-desktop-allow-access"
