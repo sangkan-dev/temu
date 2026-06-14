@@ -17,7 +17,7 @@ pub use heuristic::generate_candidates;
 pub use passive::{fetch_crtsh, fetch_crtsh_with_base, fetch_crtsh_with_cache};
 pub use port_scan::{
     PortResult, PortState, default_top_ports, grab_banner, identify_service, parse_ports,
-    scan_ports, scan_ports_named,
+    scan_ports, scan_ports_named, scan_ports_passive,
 };
 pub use probe::{ProbeResult, probe_all, probe_http};
 pub use wordlist::load_wordlist;

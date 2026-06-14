@@ -23,6 +23,7 @@ pub enum GraphNodeKind {
     Endpoint,
     Cve,
     Finding,
+    Exposure,
 }
 
 /// One graph node.
@@ -104,6 +105,65 @@ pub fn build_asset_graph(result: &ScanResult) -> AssetGraph {
         }
     }
 
+    for service in &result.services {
+        let host = host_from_url(&service.endpoint).unwrap_or_else(|| service.endpoint.clone());
+        let host_id = node_id("ip", &host);
+        let service_id = node_id("service", &service.endpoint);
+        let port_id = format!("port:{}", service.port);
+        let exposure = if service
+            .signals
+            .iter()
+            .any(|signal| signal == "publicly_routable")
+        {
+            "internet_facing"
+        } else {
+            "internal_or_private"
+        };
+        let exposure_id = node_id("exposure", exposure);
+        builder.add_node(&host_id, GraphNodeKind::Ip, &host, 0.0);
+        builder.add_node(
+            &service_id,
+            GraphNodeKind::Service,
+            &service.endpoint,
+            service_risk_score(service),
+        );
+        builder.add_node(
+            &port_id,
+            GraphNodeKind::Port,
+            &service.port.to_string(),
+            0.0,
+        );
+        builder.add_node(
+            &exposure_id,
+            GraphNodeKind::Exposure,
+            exposure,
+            if exposure == "internet_facing" {
+                55.0
+            } else {
+                10.0
+            },
+        );
+        builder.add_edge(&target_id, &host_id, "contains_host");
+        builder.add_edge(&host_id, &service_id, "exposes");
+        builder.add_edge(&service_id, &port_id, "listens_on");
+        builder.add_edge(&service_id, &exposure_id, "has_exposure");
+        if let Some(product) = &service.product {
+            let label = if let Some(version) = &service.version {
+                format!("{product}/{version}")
+            } else {
+                product.clone()
+            };
+            let product_id = node_id("tech", &label);
+            builder.add_node(
+                &product_id,
+                GraphNodeKind::Technology,
+                &label,
+                service.confidence * 10.0,
+            );
+            builder.add_edge(&service_id, &product_id, "runs");
+        }
+    }
+
     for (url, techs) in &result.tech_stacks {
         let endpoint_id = node_id("endpoint", url);
         builder.add_node(&endpoint_id, GraphNodeKind::Endpoint, url, 0.0);
@@ -142,6 +202,16 @@ pub fn build_asset_graph(result: &ScanResult) -> AssetGraph {
             0.0,
         );
         builder.add_edge(&endpoint_id, &finding_id, "has_finding");
+        if finding.representative_url.starts_with("tcp://") {
+            let service_id = node_id("service", &finding.representative_url);
+            builder.add_node(
+                &service_id,
+                GraphNodeKind::Service,
+                &finding.representative_url,
+                finding.risk_score,
+            );
+            builder.add_edge(&service_id, &finding_id, "has_finding");
+        }
         if finding.rule_id.starts_with("CVE-") {
             let cve_id = node_id("cve", &finding.rule_id);
             builder.add_node(
@@ -151,11 +221,31 @@ pub fn build_asset_graph(result: &ScanResult) -> AssetGraph {
                 finding.risk_score,
             );
             builder.add_edge(&finding_id, &cve_id, "references");
+            if let Some(service) = result
+                .services
+                .iter()
+                .find(|service| service.endpoint == finding.representative_url)
+                && let Some(product) = &service.product
+            {
+                let label = service
+                    .version
+                    .as_ref()
+                    .map(|version| format!("{product}/{version}"))
+                    .unwrap_or_else(|| product.clone());
+                let product_id = node_id("tech", &label);
+                builder.add_node(
+                    &product_id,
+                    GraphNodeKind::Technology,
+                    &label,
+                    service.confidence * 10.0,
+                );
+                builder.add_edge(&product_id, &cve_id, "affected_by");
+            }
         }
     }
 
     let attack_path_hints = attack_path_hints(result, &deduped_findings);
-    let top_remediation_actions = top_remediation_actions(&deduped_findings);
+    let top_remediation_actions = top_remediation_actions(result, &deduped_findings);
 
     AssetGraph {
         target: result.target.clone(),
@@ -341,6 +431,31 @@ fn attack_path_hints(
         matches!(asset.asset_type, AssetType::Service | AssetType::Url)
             && is_public_surface(&asset.url)
     });
+    let public_services = result
+        .services
+        .iter()
+        .filter(|service| {
+            service
+                .signals
+                .iter()
+                .any(|signal| signal == "publicly_routable")
+        })
+        .collect::<Vec<_>>();
+    let public_database_without_tls = public_services.iter().any(|service| {
+        matches!(
+            service.protocol.as_str(),
+            "postgresql" | "mysql" | "mssql" | "mongodb"
+        ) && service.tls.as_ref().is_none_or(|tls| !tls.detected)
+    });
+    let public_unauthenticated_redis = public_services
+        .iter()
+        .any(|service| service.protocol == "redis" && service.auth_required == Some(false));
+    let public_remote_management = public_services.iter().any(|service| {
+        service
+            .signals
+            .iter()
+            .any(|signal| signal == "remote_management_service")
+    });
 
     let mut hints = Vec::new();
     if has_admin && has_missing_headers && has_public_service {
@@ -364,6 +479,37 @@ fn attack_path_hints(
             ],
         });
     }
+    if public_database_without_tls {
+        hints.push(AttackPathHint {
+            title: "Internet-facing database with weak transport boundary".to_string(),
+            score: 92.0,
+            evidence: vec![
+                "Database listener is publicly routable".to_string(),
+                "TLS was not observed on the database listener".to_string(),
+                "Compromise would provide direct access to a data-plane service".to_string(),
+            ],
+        });
+    }
+    if public_unauthenticated_redis {
+        hints.push(AttackPathHint {
+            title: "Internet-facing Redis accepts unauthenticated commands".to_string(),
+            score: 98.0,
+            evidence: vec![
+                "Redis listener is publicly routable".to_string(),
+                "Unauthenticated command response was observed".to_string(),
+            ],
+        });
+    }
+    if public_remote_management {
+        hints.push(AttackPathHint {
+            title: "Internet-facing remote management path".to_string(),
+            score: 84.0,
+            evidence: vec![
+                "Remote-management protocol is publicly routable".to_string(),
+                "Restrict access through a VPN or bastion host".to_string(),
+            ],
+        });
+    }
     hints.sort_by(|left, right| {
         right
             .score
@@ -373,7 +519,10 @@ fn attack_path_hints(
     hints
 }
 
-fn top_remediation_actions(findings: &[DedupedFinding]) -> Vec<RemediationAction> {
+fn top_remediation_actions(
+    result: &ScanResult,
+    findings: &[DedupedFinding],
+) -> Vec<RemediationAction> {
     let mut grouped: HashMap<String, Vec<&DedupedFinding>> = HashMap::new();
     for finding in findings {
         grouped
@@ -404,6 +553,39 @@ fn top_remediation_actions(findings: &[DedupedFinding]) -> Vec<RemediationAction
             }
         })
         .collect::<Vec<_>>();
+    let segmentation_services = result
+        .services
+        .iter()
+        .filter(|service| {
+            service.signals.iter().any(|signal| {
+                matches!(
+                    signal.as_str(),
+                    "database_or_cache_service"
+                        | "message_broker_service"
+                        | "remote_management_service"
+                        | "administrative_interface"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if !segmentation_services.is_empty() {
+        let public_count = segmentation_services
+            .iter()
+            .filter(|service| {
+                service
+                    .signals
+                    .iter()
+                    .any(|signal| signal == "publicly_routable")
+            })
+            .count();
+        actions.push(RemediationAction {
+            title: "Segment sensitive network services".to_string(),
+            risk_score: if public_count > 0 { 95.0 } else { 55.0 },
+            affected_findings: public_count,
+            affected_assets: segmentation_services.len(),
+            remediation: "Place databases, caches, message brokers, and management protocols in dedicated network segments; allow access only from approved application, administration, or bastion subnets.".to_string(),
+        });
+    }
     actions.sort_by(|left, right| {
         right
             .risk_score
@@ -412,6 +594,31 @@ fn top_remediation_actions(findings: &[DedupedFinding]) -> Vec<RemediationAction
     });
     actions.truncate(10);
     actions
+}
+
+fn service_risk_score(service: &temu_core::ServiceEvidence) -> f32 {
+    let public = service
+        .signals
+        .iter()
+        .any(|signal| signal == "publicly_routable");
+    let sensitive = service.signals.iter().any(|signal| {
+        matches!(
+            signal.as_str(),
+            "database_or_cache_service"
+                | "message_broker_service"
+                | "remote_management_service"
+                | "administrative_interface"
+        )
+    });
+    let unauthenticated = service.auth_required == Some(false);
+    match (public, sensitive, unauthenticated) {
+        (true, true, true) => 95.0,
+        (true, true, false) => 75.0,
+        (true, false, _) => 55.0,
+        (false, true, true) => 45.0,
+        (false, true, false) => 25.0,
+        _ => 5.0,
+    }
 }
 
 fn risk_score(vulnerability: &Vulnerability) -> f32 {
@@ -557,6 +764,7 @@ fn kind_prefix(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Endpoint => "endpoint",
         GraphNodeKind::Cve => "cve",
         GraphNodeKind::Finding => "finding",
+        GraphNodeKind::Exposure => "exposure",
     }
 }
 
@@ -608,7 +816,22 @@ mod tests {
                     "https://example.com/admin",
                 ),
             ],
-            services: Vec::new(),
+            services: vec![temu_core::ServiceEvidence {
+                endpoint: "tcp://8.8.8.8:5432".to_string(),
+                port: 5432,
+                protocol: "postgresql".to_string(),
+                product: Some("PostgreSQL".to_string()),
+                version: Some("17".to_string()),
+                confidence: 0.95,
+                banner: None,
+                handshake: None,
+                auth_required: Some(true),
+                tls: None,
+                signals: vec![
+                    "publicly_routable".to_string(),
+                    "database_or_cache_service".to_string(),
+                ],
+            }],
             target_summaries: Vec::new(),
             callback_events: Vec::new(),
             scan_started_at: Utc::now(),
@@ -631,6 +854,24 @@ mod tests {
                 .nodes
                 .iter()
                 .any(|node| node.kind == GraphNodeKind::Technology)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::Exposure)
+        );
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.relation == "has_exposure")
+        );
+        assert!(
+            graph
+                .top_remediation_actions
+                .iter()
+                .any(|action| action.title == "Segment sensitive network services")
         );
     }
 

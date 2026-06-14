@@ -225,6 +225,30 @@ pub enum ScanCommand {
         #[arg(long)]
         ports: Option<String>,
 
+        /// Number of CIDR hosts processed before writing a checkpoint.
+        #[arg(long, default_value_t = 256)]
+        chunk_size: usize,
+
+        /// Path to a resumable network scan checkpoint.
+        #[arg(long)]
+        checkpoint: Option<std::path::PathBuf>,
+
+        /// Resume from an existing --checkpoint file.
+        #[arg(long, requires = "checkpoint")]
+        resume: bool,
+
+        /// Previous aggregate network JSON report used for service drift detection.
+        #[arg(long)]
+        baseline: Option<std::path::PathBuf>,
+
+        /// Host-liveness strategy used before service scanning.
+        #[arg(long, default_value = "tcp")]
+        liveness: NetworkLivenessArg,
+
+        /// Collect TCP greetings only and skip active protocol probes and web scanning.
+        #[arg(long)]
+        passive_network: bool,
+
         /// Write local audit JSON artifacts containing unredacted sensitive evidence.
         #[arg(long)]
         include_sensitive_evidence: bool,
@@ -257,6 +281,14 @@ pub enum ScanCommand {
         #[arg(long)]
         oast_wait_secs: Option<u64>,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum NetworkLivenessArg {
+    Tcp,
+    Icmp,
+    Arp,
+    Combined,
 }
 
 #[derive(Debug, Subcommand)]
@@ -726,6 +758,56 @@ mod tests {
             } => {
                 assert_eq!(cidr, "10.0.0.0/24");
                 assert_eq!(ports, Some("22,80-81".to_string()));
+            }
+            _ => panic!("expected Scan::Network"),
+        }
+    }
+
+    #[test]
+    fn test_scan_network_mapping_options_parse() {
+        let cli = Cli::try_parse_from([
+            "temu",
+            "scan",
+            "network",
+            "--cidr",
+            "10.0.0.0/16",
+            "--chunk-size",
+            "64",
+            "--checkpoint",
+            "/tmp/network-checkpoint.json",
+            "--resume",
+            "--baseline",
+            "/tmp/baseline.json",
+            "--liveness",
+            "combined",
+            "--passive-network",
+        ])
+        .expect("network mapping options must parse");
+        match cli.command {
+            Command::Scan {
+                mode:
+                    ScanCommand::Network {
+                        chunk_size,
+                        checkpoint,
+                        resume,
+                        baseline,
+                        liveness,
+                        passive_network,
+                        ..
+                    },
+            } => {
+                assert_eq!(chunk_size, 64);
+                assert_eq!(
+                    checkpoint,
+                    Some(std::path::PathBuf::from("/tmp/network-checkpoint.json"))
+                );
+                assert!(resume);
+                assert_eq!(
+                    baseline,
+                    Some(std::path::PathBuf::from("/tmp/baseline.json"))
+                );
+                assert!(matches!(liveness, NetworkLivenessArg::Combined));
+                assert!(passive_network);
             }
             _ => panic!("expected Scan::Network"),
         }

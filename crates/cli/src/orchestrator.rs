@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use chrono::Utc;
 use discovery::{
     DiscoveryMode, PortResult, default_top_ports, run_api_discovery, run_browser_crawl,
-    run_discovery, scan_ports, scan_ports_named,
+    run_discovery, scan_ports, scan_ports_named, scan_ports_passive,
 };
 use fingerprint::{TechCategory, TechStack, run_fingerprint};
 use fuzzing::run_fuzzing;
 use hickory_resolver::TokioResolver;
 use reporter::types::{CallbackEvent, ScanResult, ScanStats, TargetSummary};
+use serde::{Deserialize, Serialize};
 use temu_core::{AppConfig, Asset, AssetType, ServiceEvidence, Severity, Target, Vulnerability};
 use tracing::info;
 use verifier::run_verification;
@@ -19,7 +21,61 @@ use vulnerability::{run_network_service_checks, run_vulnerability_scan};
 use crate::collaborator::load_callback_events;
 use crate::stateful::run_stateful_dast;
 
-const MAX_CIDR_HOSTS: u64 = 65_536;
+const MAX_CIDR_HOSTS: u64 = 1_048_576;
+const DEFAULT_NETWORK_CHUNK_SIZE: usize = 256;
+
+/// Optional host-liveness preflight used before service scanning.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NetworkLivenessStrategy {
+    /// Treat TCP connect scanning as the authoritative liveness signal.
+    #[default]
+    Tcp,
+    /// Require a successful ICMP echo before scanning a host.
+    Icmp,
+    /// Require an entry in the local ARP cache before scanning a host.
+    Arp,
+    /// Use ICMP and ARP hints while retaining TCP connect as a fallback.
+    Combined,
+}
+
+/// Runtime controls for resumable, scope-aware network mapping.
+#[derive(Debug, Clone)]
+pub struct NetworkScanOptions {
+    pub chunk_size: usize,
+    pub checkpoint_path: Option<PathBuf>,
+    pub resume: bool,
+    pub passive_network: bool,
+    pub liveness: NetworkLivenessStrategy,
+    pub baseline_path: Option<PathBuf>,
+}
+
+impl Default for NetworkScanOptions {
+    fn default() -> Self {
+        Self {
+            chunk_size: DEFAULT_NETWORK_CHUNK_SIZE,
+            checkpoint_path: None,
+            resume: false,
+            passive_network: false,
+            liveness: NetworkLivenessStrategy::Tcp,
+            baseline_path: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NetworkCheckpoint {
+    cidr: String,
+    ports: Vec<u16>,
+    next_offset: u64,
+    results: Vec<ScanResult>,
+    updated_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Ipv4NetworkRange {
+    network: u32,
+    host_count: u64,
+}
 
 /// Results from a multi-target scan, including aggregate and per-target reports.
 #[derive(Debug, Clone)]
@@ -495,7 +551,11 @@ pub async fn run_network_scan(
     config: &AppConfig,
     ports: &[u16],
 ) -> anyhow::Result<ScanResult> {
-    Ok(run_network_scan_multi(cidr, config, ports).await?.aggregate)
+    Ok(
+        run_network_scan_multi_with_options(cidr, config, ports, &NetworkScanOptions::default())
+            .await?
+            .aggregate,
+    )
 }
 
 /// Runs TCP port scanning for an IPv4 CIDR and full scans for discovered web services.
@@ -504,35 +564,89 @@ pub async fn run_network_scan_multi(
     config: &AppConfig,
     ports: &[u16],
 ) -> anyhow::Result<MultiTargetScanResult> {
+    run_network_scan_multi_with_options(cidr, config, ports, &NetworkScanOptions::default()).await
+}
+
+/// Runs a resumable, chunked network scan with optional passive and liveness controls.
+pub async fn run_network_scan_multi_with_options(
+    cidr: &str,
+    config: &AppConfig,
+    ports: &[u16],
+    options: &NetworkScanOptions,
+) -> anyhow::Result<MultiTargetScanResult> {
     let started_at = Utc::now();
-    let ips = expand_ipv4_cidr(cidr)?;
-    if ips.iter().any(|ip| ip.is_private()) {
+    let range = parse_ipv4_network_range(cidr)?;
+    let first_ip = Ipv4Addr::from(range.network);
+    if first_ip.is_private() {
         eprintln!("[!] Scanning private network range: {cidr}");
     }
+    let chunk_size = options.chunk_size.max(1);
     eprintln!(
-        "[*] Starting network scan for {cidr} ({} hosts, {} ports)",
-        ips.len(),
+        "[*] Starting network scan for {cidr} ({} hosts, {} ports, chunks of {chunk_size})",
+        range.host_count,
         ports.len()
     );
+    if options.passive_network {
+        eprintln!("[*] Passive network mode enabled: connect and greeting collection only");
+    }
 
-    let mut per_target_results = Vec::new();
+    let checkpoint = load_network_checkpoint(cidr, ports, options).await?;
+    let mut per_target_results = checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.results.clone())
+        .unwrap_or_default();
+    let mut offset = checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.next_offset)
+        .unwrap_or(0);
+    let mut empty_host_streak = 0_u32;
 
-    for (index, ip) in ips.iter().enumerate() {
-        eprintln!("Scanning target {}/{}: {ip}", index + 1, ips.len());
-        let port_results = scan_ports(IpAddr::V4(*ip), ports, config).await;
-        let ServiceReportItems {
-            assets: service_assets,
-            techs: service_techs,
-            web_urls,
-            services,
-        } = report_items_from_port_results(IpAddr::V4(*ip), &port_results);
-        let network_findings = run_network_service_checks(&services, config).unwrap_or_else(|e| {
-            tracing::warn!("Network rule scan error for {ip}: {e}");
-            Vec::new()
-        });
+    while offset < range.host_count {
+        let chunk_end = (offset + chunk_size as u64).min(range.host_count);
+        eprintln!(
+            "[*] Network chunk {}-{} of {}",
+            offset + 1,
+            chunk_end,
+            range.host_count
+        );
 
-        if web_urls.is_empty() {
-            if !service_assets.is_empty() {
+        for current_offset in offset..chunk_end {
+            let ip = Ipv4Addr::from(range.network + current_offset as u32);
+            eprintln!(
+                "Scanning target {}/{}: {ip}",
+                current_offset + 1,
+                range.host_count
+            );
+            if !host_liveness_allows_scan(ip, options.liveness).await {
+                tracing::debug!("Skipping {ip}: selected liveness strategy did not observe host");
+                continue;
+            }
+
+            let port_results = if options.passive_network {
+                scan_ports_passive(IpAddr::V4(ip), ports, config).await
+            } else {
+                scan_ports(IpAddr::V4(ip), ports, config).await
+            };
+            if port_results.is_empty() {
+                empty_host_streak = empty_host_streak.saturating_add(1);
+                adaptive_network_backoff(empty_host_streak).await;
+                continue;
+            }
+            empty_host_streak = 0;
+            let ServiceReportItems {
+                assets: service_assets,
+                techs: service_techs,
+                web_urls,
+                services,
+            } = report_items_from_port_results(IpAddr::V4(ip), &port_results);
+            let mut network_findings = run_network_service_checks(&services, config)
+                .unwrap_or_else(|error| {
+                    tracing::warn!("Network rule scan error for {ip}: {error}");
+                    Vec::new()
+                });
+            network_findings.extend(exposure_combination_findings(&services));
+
+            if web_urls.is_empty() {
                 per_target_results.push(service_only_scan_result(
                     &ip.to_string(),
                     service_assets,
@@ -541,29 +655,11 @@ pub async fn run_network_scan_multi(
                     network_findings,
                     started_at,
                 ));
+                continue;
             }
-            continue;
-        }
 
-        for web_url in web_urls {
-            match run_scan_with_ports(&web_url, config, DiscoveryMode::PassiveOnly, &[]).await {
-                Ok(mut result) => {
-                    result.assets.extend(service_assets.clone());
-                    result.services.extend(services.clone());
-                    result.vulnerabilities.extend(network_findings.clone());
-                    result.stats.vulns_found = result.vulnerabilities.len() as u32;
-                    for (service_url, tech) in &service_techs {
-                        result
-                            .tech_stacks
-                            .entry(service_url.clone())
-                            .or_default()
-                            .push(tech.clone());
-                    }
-                    per_target_results.push(result);
-                }
-                Err(e) => {
-                    tracing::warn!("Web service scan failed for {web_url}: {e}");
-                    eprintln!("[!] Web service scan failed for {web_url}: {e}");
+            for web_url in web_urls {
+                if options.passive_network {
                     per_target_results.push(service_only_scan_result(
                         &web_url,
                         service_assets.clone(),
@@ -572,8 +668,49 @@ pub async fn run_network_scan_multi(
                         network_findings.clone(),
                         started_at,
                     ));
+                    continue;
+                }
+                match run_scan_with_ports(&web_url, config, DiscoveryMode::PassiveOnly, &[]).await {
+                    Ok(mut result) => {
+                        result.assets.extend(service_assets.clone());
+                        result.services.extend(services.clone());
+                        result.vulnerabilities.extend(network_findings.clone());
+                        result.stats.vulns_found = result.vulnerabilities.len() as u32;
+                        for (service_url, tech) in &service_techs {
+                            result
+                                .tech_stacks
+                                .entry(service_url.clone())
+                                .or_default()
+                                .push(tech.clone());
+                        }
+                        per_target_results.push(result);
+                    }
+                    Err(error) => {
+                        tracing::warn!("Web service scan failed for {web_url}: {error}");
+                        eprintln!("[!] Web service scan failed for {web_url}: {error}");
+                        per_target_results.push(service_only_scan_result(
+                            &web_url,
+                            service_assets.clone(),
+                            service_techs.clone(),
+                            services.clone(),
+                            network_findings.clone(),
+                            started_at,
+                        ));
+                    }
                 }
             }
+        }
+
+        offset = chunk_end;
+        if let Some(path) = &options.checkpoint_path {
+            let value = NetworkCheckpoint {
+                cidr: cidr.to_string(),
+                ports: ports.to_vec(),
+                next_offset: offset,
+                results: per_target_results.clone(),
+                updated_at: Utc::now(),
+            };
+            write_network_checkpoint(path, &value).await?;
         }
     }
 
@@ -585,6 +722,12 @@ pub async fn run_network_scan_multi(
     aggregate.scan_started_at = started_at;
     aggregate.scan_finished_at = finished_at;
     aggregate.stats.duration_secs = duration_secs;
+    if let Some(path) = &options.baseline_path {
+        aggregate
+            .vulnerabilities
+            .extend(detect_service_drift(path, &aggregate).await?);
+        aggregate.stats.vulns_found = aggregate.vulnerabilities.len() as u32;
+    }
 
     Ok(MultiTargetScanResult {
         aggregate,
@@ -770,7 +913,303 @@ fn highest_severity(vulnerabilities: &[temu_core::Vulnerability]) -> Option<Seve
         .max()
 }
 
-fn expand_ipv4_cidr(cidr: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
+async fn load_network_checkpoint(
+    cidr: &str,
+    ports: &[u16],
+    options: &NetworkScanOptions,
+) -> anyhow::Result<Option<NetworkCheckpoint>> {
+    if !options.resume {
+        return Ok(None);
+    }
+    let path = options
+        .checkpoint_path
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--resume requires --checkpoint"))?;
+    let content = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|error| anyhow::anyhow!("Failed to read network checkpoint {path:?}: {error}"))?;
+    let checkpoint: NetworkCheckpoint = serde_json::from_str(&content)
+        .map_err(|error| anyhow::anyhow!("Invalid network checkpoint {path:?}: {error}"))?;
+    if checkpoint.cidr != cidr || checkpoint.ports != ports {
+        return Err(anyhow::anyhow!(
+            "Checkpoint scope mismatch: expected CIDR {cidr} and requested ports"
+        ));
+    }
+    eprintln!(
+        "[*] Resuming network scan at host offset {} with {} retained result(s)",
+        checkpoint.next_offset,
+        checkpoint.results.len()
+    );
+    Ok(Some(checkpoint))
+}
+
+async fn write_network_checkpoint(
+    path: &Path,
+    checkpoint: &NetworkCheckpoint,
+) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let content = serde_json::to_vec_pretty(checkpoint)?;
+    let temporary = path.with_extension("tmp");
+    tokio::fs::write(&temporary, content).await?;
+    tokio::fs::rename(&temporary, path).await?;
+    Ok(())
+}
+
+async fn host_liveness_allows_scan(ip: Ipv4Addr, strategy: NetworkLivenessStrategy) -> bool {
+    match strategy {
+        NetworkLivenessStrategy::Tcp | NetworkLivenessStrategy::Combined => true,
+        NetworkLivenessStrategy::Icmp => icmp_liveness(ip).await,
+        NetworkLivenessStrategy::Arp => arp_cache_contains(ip).await,
+    }
+}
+
+async fn icmp_liveness(ip: Ipv4Addr) -> bool {
+    tokio::process::Command::new("ping")
+        .args(["-c", "1", "-W", "1", &ip.to_string()])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .is_ok_and(|output| output.status.success())
+}
+
+async fn arp_cache_contains(ip: Ipv4Addr) -> bool {
+    let Ok(content) = tokio::fs::read_to_string("/proc/net/arp").await else {
+        return false;
+    };
+    let needle = ip.to_string();
+    content
+        .lines()
+        .skip(1)
+        .any(|line| line.split_whitespace().next() == Some(needle.as_str()))
+}
+
+async fn adaptive_network_backoff(empty_host_streak: u32) {
+    if empty_host_streak < 8 {
+        return;
+    }
+    let exponent = (empty_host_streak / 8).min(5);
+    let delay_millis = 25_u64.saturating_mul(1_u64 << exponent).min(1_000);
+    tracing::debug!(
+        "Adaptive network backoff: {empty_host_streak} consecutive hosts without open ports, sleeping {delay_millis}ms"
+    );
+    tokio::time::sleep(Duration::from_millis(delay_millis)).await;
+}
+
+fn exposure_combination_findings(services: &[ServiceEvidence]) -> Vec<Vulnerability> {
+    let mut findings = Vec::new();
+    for service in services {
+        let public = has_signal(service, "publicly_routable");
+        let no_tls = service.tls.as_ref().is_none_or(|tls| !tls.detected)
+            || has_signal(service, "tls_not_supported");
+        let unauthenticated = service.auth_required == Some(false);
+        let protocol = service.protocol.as_str();
+
+        let combination = if public
+            && matches!(protocol, "postgresql" | "mysql" | "mssql" | "mongodb")
+            && no_tls
+        {
+            Some((
+                "NETWORK-RISK-PUBLIC-DATABASE-WEAK-TRANSPORT",
+                "Public database service without observed TLS",
+                Severity::High,
+                8.1,
+                "Place the database on a private network segment, enforce TLS, and restrict inbound access.",
+            ))
+        } else if public && protocol == "redis" && unauthenticated {
+            Some((
+                "NETWORK-RISK-PUBLIC-REDIS-NO-AUTH",
+                "Public Redis service accepts unauthenticated commands",
+                Severity::Critical,
+                9.8,
+                "Remove Redis from public exposure, require authentication, and restrict it to an application segment.",
+            ))
+        } else if public
+            && protocol == "rdp"
+            && service
+                .banner
+                .as_deref()
+                .is_some_and(|banner| banner.to_ascii_lowercase().contains("windows server 2008"))
+        {
+            Some((
+                "NETWORK-RISK-PUBLIC-RDP-LEGACY",
+                "Public RDP service exposes a legacy operating-system banner",
+                Severity::High,
+                8.1,
+                "Restrict RDP behind a VPN or bastion host, require NLA, and upgrade the operating system.",
+            ))
+        } else if public
+            && (has_signal(service, "administrative_interface")
+                || has_signal(service, "remote_management_service")
+                || has_signal(service, "message_broker_service"))
+        {
+            Some((
+                "NETWORK-RISK-PUBLIC-MANAGEMENT-SURFACE",
+                "Administrative or management service is publicly reachable",
+                Severity::Medium,
+                6.5,
+                "Move management services to a dedicated administrative segment and require an authenticated access proxy.",
+            ))
+        } else {
+            None
+        };
+
+        if let Some((id, name, severity, cvss, remediation)) = combination {
+            let mut finding = Vulnerability::new(
+                id,
+                name,
+                severity,
+                cvss,
+                format!(
+                    "protocol={} signals={}",
+                    service.protocol,
+                    service.signals.join(",")
+                ),
+                &service.endpoint,
+            );
+            finding.verified = true;
+            finding.remediation = Some(remediation.to_string());
+            findings.push(finding);
+        }
+    }
+    findings
+}
+
+fn has_signal(service: &ServiceEvidence, signal: &str) -> bool {
+    service.signals.iter().any(|value| value == signal)
+}
+
+async fn detect_service_drift(
+    path: &Path,
+    current: &ScanResult,
+) -> anyhow::Result<Vec<Vulnerability>> {
+    let content = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|error| anyhow::anyhow!("Failed to read baseline {path:?}: {error}"))?;
+    let baseline: ScanResult = serde_json::from_str(&content)
+        .map_err(|error| anyhow::anyhow!("Invalid baseline report {path:?}: {error}"))?;
+    Ok(service_drift_findings(
+        &baseline.services,
+        &current.services,
+    ))
+}
+
+fn service_drift_findings(
+    baseline: &[ServiceEvidence],
+    current: &[ServiceEvidence],
+) -> Vec<Vulnerability> {
+    let before = baseline
+        .iter()
+        .map(|service| (service_listener_identity(service), service))
+        .collect::<HashMap<_, _>>();
+    let after = current
+        .iter()
+        .map(|service| (service_listener_identity(service), service))
+        .collect::<HashMap<_, _>>();
+    let mut findings = Vec::new();
+    for service in current
+        .iter()
+        .filter(|service| !before.contains_key(&service_listener_identity(service)))
+    {
+        let risky = service.signals.iter().any(|signal| {
+            matches!(
+                signal.as_str(),
+                "publicly_routable"
+                    | "remote_management_service"
+                    | "administrative_interface"
+                    | "database_or_cache_service"
+                    | "message_broker_service"
+            )
+        });
+        let mut finding = Vulnerability::new(
+            "NETWORK-SERVICE-DRIFT-NEW",
+            "New network service observed since baseline",
+            if risky {
+                Severity::Medium
+            } else {
+                Severity::Info
+            },
+            if risky { 5.3 } else { 0.0 },
+            format!(
+                "new_service={} protocol={} product={}",
+                service.endpoint,
+                service.protocol,
+                service.product.as_deref().unwrap_or("unknown")
+            ),
+            &service.endpoint,
+        );
+        finding.verified = true;
+        finding.remediation = Some(
+            "Confirm that the new listener is authorized and apply the expected network segmentation policy."
+                .to_string(),
+        );
+        findings.push(finding);
+    }
+    for (identity, service) in before
+        .iter()
+        .filter(|(identity, _)| !after.contains_key(*identity))
+    {
+        let mut finding = Vulnerability::new(
+            "NETWORK-SERVICE-DRIFT-REMOVED",
+            "Previously observed network service is no longer reachable",
+            Severity::Info,
+            0.0,
+            format!("removed_service={identity}"),
+            &service.endpoint,
+        );
+        finding.verified = true;
+        finding.remediation =
+            Some("Confirm that the service removal or outage was intentional.".to_string());
+        findings.push(finding);
+    }
+    for (identity, service) in &after {
+        let Some(previous) = before.get(identity) else {
+            continue;
+        };
+        if !observed_service_profile_changed(previous, service) {
+            continue;
+        }
+        let mut finding = Vulnerability::new(
+            "NETWORK-SERVICE-DRIFT-CHANGED",
+            "Observed network service product or version changed",
+            Severity::Low,
+            3.7,
+            format!(
+                "previous_product={} previous_version={} current_product={} current_version={}",
+                previous.product.as_deref().unwrap_or("unknown"),
+                previous.version.as_deref().unwrap_or("unknown"),
+                service.product.as_deref().unwrap_or("unknown"),
+                service.version.as_deref().unwrap_or("unknown")
+            ),
+            &service.endpoint,
+        );
+        finding.verified = true;
+        finding.remediation = Some(
+            "Confirm that the observed service upgrade or replacement was authorized.".to_string(),
+        );
+        findings.push(finding);
+    }
+    findings
+}
+
+fn service_listener_identity(service: &ServiceEvidence) -> String {
+    format!("{}|{}", service.endpoint, service.protocol)
+}
+
+fn observed_service_profile_changed(previous: &ServiceEvidence, current: &ServiceEvidence) -> bool {
+    let product_changed = matches!(
+        (&previous.product, &current.product),
+        (Some(previous), Some(current)) if previous != current
+    );
+    let version_changed = matches!(
+        (&previous.version, &current.version),
+        (Some(previous), Some(current)) if previous != current
+    );
+    product_changed || version_changed
+}
+
+fn parse_ipv4_network_range(cidr: &str) -> anyhow::Result<Ipv4NetworkRange> {
     let (ip, prefix) = cidr
         .split_once('/')
         .ok_or_else(|| anyhow::anyhow!("CIDR must be in A.B.C.D/N format"))?;
@@ -779,24 +1218,28 @@ fn expand_ipv4_cidr(cidr: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
     if prefix > 32 {
         return Err(anyhow::anyhow!("CIDR prefix must be <= 32"));
     }
-
     let host_count = 1_u64 << (32 - prefix);
     if host_count > MAX_CIDR_HOSTS {
         return Err(anyhow::anyhow!(
             "Refusing to scan {host_count} hosts; CIDR range limit is {MAX_CIDR_HOSTS} IPs"
         ));
     }
-
-    let base_u32 = u32::from(base);
     let mask = if prefix == 0 {
         0
     } else {
         u32::MAX << (32 - prefix)
     };
-    let network = base_u32 & mask;
+    Ok(Ipv4NetworkRange {
+        network: u32::from(base) & mask,
+        host_count,
+    })
+}
 
-    Ok((0..host_count)
-        .map(|offset| Ipv4Addr::from(network + offset as u32))
+#[cfg(test)]
+fn expand_ipv4_cidr(cidr: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
+    let range = parse_ipv4_network_range(cidr)?;
+    Ok((0..range.host_count)
+        .map(|offset| Ipv4Addr::from(range.network + offset as u32))
         .collect())
 }
 
@@ -835,7 +1278,11 @@ mod tests {
         );
         assert!(expand_ipv4_cidr("192.0.2.0/33").is_err());
         assert_eq!(expand_ipv4_cidr("192.0.2.0/16").unwrap().len(), 65_536);
-        assert!(expand_ipv4_cidr("192.0.2.0/15").is_err());
+        assert_eq!(
+            parse_ipv4_network_range("192.0.2.0/12").unwrap().host_count,
+            1_048_576
+        );
+        assert!(parse_ipv4_network_range("192.0.2.0/11").is_err());
     }
 
     #[test]
@@ -878,6 +1325,115 @@ mod tests {
                 "http://127.0.0.1:8080".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn test_service_drift_marks_new_sensitive_listener() {
+        let baseline = Vec::new();
+        let current = vec![ServiceEvidence {
+            endpoint: "tcp://10.0.0.5:5432".to_string(),
+            port: 5432,
+            protocol: "postgresql".to_string(),
+            product: Some("PostgreSQL".to_string()),
+            version: Some("17".to_string()),
+            confidence: 0.95,
+            banner: None,
+            handshake: None,
+            auth_required: Some(true),
+            tls: None,
+            signals: vec![
+                "private_or_local".to_string(),
+                "database_or_cache_service".to_string(),
+            ],
+        }];
+
+        let findings = service_drift_findings(&baseline, &current);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].id, "NETWORK-SERVICE-DRIFT-NEW");
+        assert_eq!(findings[0].severity, Severity::Medium);
+        assert!(findings[0].verified);
+    }
+
+    #[test]
+    fn test_service_drift_ignores_profile_missing_from_passive_scan() {
+        let baseline = vec![ServiceEvidence {
+            endpoint: "tcp://10.0.0.5:6379".to_string(),
+            port: 6379,
+            protocol: "redis".to_string(),
+            product: Some("Redis".to_string()),
+            version: Some("8.0".to_string()),
+            confidence: 0.95,
+            banner: None,
+            handshake: None,
+            auth_required: Some(false),
+            tls: None,
+            signals: vec!["database_or_cache_service".to_string()],
+        }];
+        let mut passive = baseline[0].clone();
+        passive.product = None;
+        passive.version = None;
+        passive.confidence = 0.35;
+        passive.signals.push("passive_banner_only".to_string());
+
+        let findings = service_drift_findings(&baseline, &[passive]);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_service_drift_marks_observed_version_change() {
+        let baseline = vec![ServiceEvidence {
+            endpoint: "tcp://10.0.0.5:6379".to_string(),
+            port: 6379,
+            protocol: "redis".to_string(),
+            product: Some("Redis".to_string()),
+            version: Some("7.0".to_string()),
+            confidence: 0.95,
+            banner: None,
+            handshake: None,
+            auth_required: Some(false),
+            tls: None,
+            signals: vec!["database_or_cache_service".to_string()],
+        }];
+        let mut current = baseline[0].clone();
+        current.version = Some("8.0".to_string());
+
+        let findings = service_drift_findings(&baseline, &[current]);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].id, "NETWORK-SERVICE-DRIFT-CHANGED");
+        assert_eq!(findings[0].url, "tcp://10.0.0.5:6379");
+    }
+
+    #[test]
+    fn test_public_database_weak_transport_combination_is_prioritized() {
+        let services = vec![ServiceEvidence {
+            endpoint: "tcp://8.8.8.8:5432".to_string(),
+            port: 5432,
+            protocol: "postgresql".to_string(),
+            product: Some("PostgreSQL".to_string()),
+            version: None,
+            confidence: 0.95,
+            banner: None,
+            handshake: None,
+            auth_required: Some(true),
+            tls: None,
+            signals: vec![
+                "publicly_routable".to_string(),
+                "tls_not_supported".to_string(),
+                "database_or_cache_service".to_string(),
+            ],
+        }];
+
+        let findings = exposure_combination_findings(&services);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].id,
+            "NETWORK-RISK-PUBLIC-DATABASE-WEAK-TRANSPORT"
+        );
+        assert!(findings[0].verified);
     }
 
     #[test]

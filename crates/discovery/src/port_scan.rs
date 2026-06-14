@@ -163,7 +163,7 @@ pub fn parse_ports(input: &str) -> Result<Vec<u16>, String> {
 
 /// Scans TCP ports and collects protocol evidence under per-host safety budgets.
 pub async fn scan_ports(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<PortResult> {
-    scan_ports_named(ip, ports, config, None).await
+    scan_ports_with_mode(ip, ports, config, None, false).await
 }
 
 /// Scans TCP ports and uses an optional DNS name for certificate hostname checks.
@@ -172,6 +172,21 @@ pub async fn scan_ports_named(
     ports: &[u16],
     config: &AppConfig,
     server_name: Option<&str>,
+) -> Vec<PortResult> {
+    scan_ports_with_mode(ip, ports, config, server_name, false).await
+}
+
+/// Scans TCP ports using connect and greeting collection without active protocol probes.
+pub async fn scan_ports_passive(ip: IpAddr, ports: &[u16], config: &AppConfig) -> Vec<PortResult> {
+    scan_ports_with_mode(ip, ports, config, None, true).await
+}
+
+async fn scan_ports_with_mode(
+    ip: IpAddr,
+    ports: &[u16],
+    config: &AppConfig,
+    server_name: Option<&str>,
+    passive: bool,
 ) -> Vec<PortResult> {
     let semaphore = Arc::new(Semaphore::new(config.concurrency.max(1)));
     let budget = Arc::new(ConnectionBudget::new(config));
@@ -190,7 +205,15 @@ pub async fn scan_ports_named(
             if !budget.reserve() {
                 return filtered_result(port);
             }
-            scan_one_port(ip, port, budget, allow_risky_probes, server_name.as_deref()).await
+            scan_one_port(
+                ip,
+                port,
+                budget,
+                allow_risky_probes,
+                server_name.as_deref(),
+                passive,
+            )
+            .await
         }));
     }
 
@@ -220,6 +243,7 @@ async fn scan_one_port(
     budget: Arc<ConnectionBudget>,
     allow_risky_probes: bool,
     server_name: Option<&str>,
+    passive: bool,
 ) -> PortResult {
     let addr = SocketAddr::new(ip, port);
     debug!("Port scanning {addr}");
@@ -233,14 +257,19 @@ async fn scan_one_port(
         return closed_result(port);
     };
 
-    let bytes = profile_response(&mut stream, port).await;
+    let bytes = if passive {
+        passive_greeting(&mut stream).await
+    } else {
+        profile_response(&mut stream, port).await
+    };
     let mut profile = parse_service_profile(port, &bytes);
-    let mut tls = if budget.reserve() {
+    let mut tls = if !passive && budget.reserve() {
         probe_tls(ip, port).await
     } else {
         None
     };
-    if (tls.is_some() || likely_tls_port(port))
+    if !passive
+        && (tls.is_some() || likely_tls_port(port))
         && budget.reserve()
         && let Some(certificate_evidence) = probe_tls_certificate(ip, port, server_name).await
     {
@@ -303,7 +332,7 @@ async fn scan_one_port(
             push_signal(&mut profile, "tls_certificate_expired");
         }
     }
-    if profile.protocol.is_none() {
+    if !passive && profile.protocol.is_none() {
         profile = probe_unknown_service(ip, port, Arc::clone(&budget))
             .await
             .unwrap_or(profile);
@@ -316,7 +345,12 @@ async fn scan_one_port(
             0.10
         };
     }
-    enrich_service_profile(ip, port, &mut profile, &budget, allow_risky_probes).await;
+    if !passive {
+        enrich_service_profile(ip, port, &mut profile, &budget, allow_risky_probes).await;
+    } else {
+        push_signal(&mut profile, "passive_banner_only");
+    }
+    add_service_category_signals(&mut profile);
     push_signal(
         &mut profile,
         if is_publicly_routable(ip) {
@@ -339,6 +373,20 @@ async fn scan_one_port(
         tls,
         signals: profile.signals,
     }
+}
+
+async fn passive_greeting(stream: &mut TcpStream) -> Vec<u8> {
+    let mut buffer = vec![0_u8; MAX_BANNER_BYTES];
+    let Ok(Ok(size)) = timeout(
+        Duration::from_millis(GREETING_TIMEOUT_MILLIS),
+        stream.read(&mut buffer),
+    )
+    .await
+    else {
+        return Vec::new();
+    };
+    buffer.truncate(size);
+    buffer
 }
 
 async fn profile_response(stream: &mut TcpStream, port: u16) -> Vec<u8> {
@@ -832,6 +880,27 @@ fn append_handshake(profile: &mut ServiceProfile, evidence: &str) {
 fn push_signal(profile: &mut ServiceProfile, signal: &str) {
     if !profile.signals.iter().any(|value| value == signal) {
         profile.signals.push(signal.to_string());
+    }
+}
+
+fn add_service_category_signals(profile: &mut ServiceProfile) {
+    match profile.protocol.as_deref() {
+        Some("postgresql" | "mysql" | "mssql" | "mongodb" | "redis" | "memcached") => {
+            push_signal(profile, "database_or_cache_service");
+        }
+        Some("mqtt" | "amqp") => push_signal(profile, "message_broker_service"),
+        Some("rdp" | "smb" | "ssh" | "telnet" | "vnc") => {
+            push_signal(profile, "remote_management_service");
+        }
+        Some("http")
+            if profile
+                .product
+                .as_deref()
+                .is_some_and(|product| product.to_ascii_lowercase().contains("management")) =>
+        {
+            push_signal(profile, "administrative_interface");
+        }
+        _ => {}
     }
 }
 
@@ -1450,5 +1519,26 @@ mod tests {
                 .contains(&"unauthenticated_command_accepted".to_string())
         );
         assert!(results[0].signals.contains(&"private_or_local".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_scan_ports_passive_only_collects_greeting() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.write_all(b"SSH-2.0-OpenSSH_9.0\r\n").await.unwrap();
+        });
+
+        let results =
+            scan_ports_passive(IpAddr::from([127, 0, 0, 1]), &[port], &test_config()).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].service.as_deref(), Some("ssh"));
+        assert!(
+            results[0]
+                .signals
+                .contains(&"passive_banner_only".to_string())
+        );
     }
 }

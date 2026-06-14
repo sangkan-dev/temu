@@ -136,6 +136,44 @@ misconfiguration signals, and TLS certificate metadata. Temu performs read-only
 protocol probes without credential guessing. Checks that initiate an authenticated
 session, such as FTP anonymous login, require `--allow-risky-rules`.
 
+Large internal ranges can be processed in bounded chunks and resumed from an
+atomic checkpoint:
+
+```bash
+cargo run -p cli -- scan network \
+  --cidr 10.20.0.0/16 \
+  --ports 22,80,443,445,3389,5432,6379 \
+  --chunk-size 256 \
+  --checkpoint ./results/.cache/internal-map.json
+
+cargo run -p cli -- scan network \
+  --cidr 10.20.0.0/16 \
+  --ports 22,80,443,445,3389,5432,6379 \
+  --chunk-size 256 \
+  --checkpoint ./results/.cache/internal-map.json \
+  --resume
+```
+
+Use an earlier aggregate network report to detect new or removed listeners:
+
+```bash
+cargo run -p cli -- scan network \
+  --cidr 10.20.0.0/16 \
+  --ports 22,80,443,445,3389,5432,6379 \
+  --baseline ./results/previous-network-scan.json
+```
+
+TCP connect is the default liveness strategy. `--liveness icmp` and
+`--liveness arp` are optional preflight filters and depend on local operating
+system support, privileges, and ARP-cache state. `--liveness combined` retains
+TCP connect as a fallback so hosts that block ICMP are not silently skipped.
+Use `--passive-network` to limit collection to TCP connect and unsolicited
+greetings; this skips active protocol probes, TLS negotiation, and web scans.
+
+The generated graph report maps host, service, product, CVE, and exposure
+relationships. It also highlights internet-facing management/database services,
+risky exposure combinations, service drift, and segmentation recommendations.
+
 Run the isolated network-service lab:
 
 ```bash

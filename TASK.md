@@ -1607,21 +1607,29 @@ mail bersifat read-only; SMTP open-relay probe berhenti sebelum perintah `DATA`.
 **Goal:** Membantu assessor memahami peta exposure internal/eksternal tanpa melakukan eksploitasi.
 
 ### 33.1 Scope-Aware Network Mapping
-- [ ] 🔴 Support target CIDR besar dengan chunking, resume, dan checkpoint
-- [ ] 🔴 Host liveness strategy: TCP connect, ICMP optional, ARP optional untuk local network
-- [ ] 🟡 Detect service drift antar scan baseline
-- [ ] 🟡 Identify internet-facing vs private/internal addresses
+- [x] 🔴 Support target CIDR besar dengan chunking, resume, dan checkpoint
+- [x] 🔴 Host liveness strategy: TCP connect, ICMP optional, ARP optional untuk local network
+- [x] 🟡 Detect service drift antar scan baseline
+- [x] 🟡 Identify internet-facing vs private/internal addresses
 
 ### 33.2 Lateral Movement Signals
-- [ ] 🟡 Deteksi exposed admin panels, remote management ports, database ports, message brokers
-- [ ] 🟡 Tandai risky combinations: public DB + weak TLS, exposed Redis + no auth, RDP public + old banner
-- [ ] 🟡 Build graph relation: host -> service -> product -> CVE -> exposure
-- [ ] 🟢 Rekomendasi segmentation/remediation berbasis service exposure
+- [x] 🟡 Deteksi exposed admin panels, remote management ports, database ports, message brokers
+- [x] 🟡 Tandai risky combinations: public DB + weak TLS, exposed Redis + no auth, RDP public + old banner
+- [x] 🟡 Build graph relation: host -> service -> product -> CVE -> exposure
+- [x] 🟢 Rekomendasi segmentation/remediation berbasis service exposure
 
 ### 33.3 Rate & Safety
-- [ ] 🔴 Adaptive network scan rate per subnet
-- [ ] 🟡 Backoff saat packet loss/connection refused spike
-- [ ] 🟡 `--passive-network` mode untuk banner-only scan
+- [x] 🔴 Adaptive network scan rate per subnet
+- [x] 🟡 Backoff saat packet loss/connection refused spike
+- [x] 🟡 `--passive-network` mode untuk banner-only scan
+
+**Catatan implementasi:** Network mapping memproses CIDR secara streaming per
+chunk dan menyimpan offset beserta hasil live host ke checkpoint JSON atomik.
+Liveness TCP tetap menjadi default; ICMP dan ARP tersedia sebagai filter opsional,
+sementara mode `combined` mempertahankan TCP connect sebagai fallback agar host
+yang memblokir ICMP tidak terlewat. Backoff adaptif aktif setelah rangkaian host
+tanpa listener terbuka. Mode `--passive-network` hanya melakukan TCP connect dan
+membaca greeting tanpa protocol probe, TLS negotiation, atau web scan aktif.
 
 ### 🏁 Sprint 33 — Definition of Done
 - Temu bisa memberi peta attack surface lintas host/service

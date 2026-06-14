@@ -11,8 +11,8 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use args::{
-    Cli, CollaboratorCommand, Command, DiscoveryModeArg, ReportFormat, RulesCommand, ScanCommand,
-    ScheduleCommand, WordlistSize,
+    Cli, CollaboratorCommand, Command, DiscoveryModeArg, NetworkLivenessArg, ReportFormat,
+    RulesCommand, ScanCommand, ScheduleCommand, WordlistSize,
 };
 use clap::Parser;
 use cli::rules_update;
@@ -221,6 +221,12 @@ async fn main() -> anyhow::Result<()> {
             ScanCommand::Network {
                 cidr,
                 ports,
+                chunk_size,
+                checkpoint,
+                resume,
+                baseline,
+                liveness,
+                passive_network,
                 include_sensitive_evidence,
                 session_profile,
                 session_role,
@@ -262,9 +268,29 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|e| anyhow::anyhow!("Invalid --ports value: {e}"))?,
                     None => default_top_ports(),
                 };
-                let result = orchestrator::run_network_scan_multi(&cidr, &config, &selected_ports)
-                    .await
-                    .with_context(|| "Network scan failed")?;
+                let options = orchestrator::NetworkScanOptions {
+                    chunk_size,
+                    checkpoint_path: checkpoint,
+                    resume,
+                    passive_network,
+                    liveness: match liveness {
+                        NetworkLivenessArg::Tcp => orchestrator::NetworkLivenessStrategy::Tcp,
+                        NetworkLivenessArg::Icmp => orchestrator::NetworkLivenessStrategy::Icmp,
+                        NetworkLivenessArg::Arp => orchestrator::NetworkLivenessStrategy::Arp,
+                        NetworkLivenessArg::Combined => {
+                            orchestrator::NetworkLivenessStrategy::Combined
+                        }
+                    },
+                    baseline_path: baseline,
+                };
+                let result = orchestrator::run_network_scan_multi_with_options(
+                    &cidr,
+                    &config,
+                    &selected_ports,
+                    &options,
+                )
+                .await
+                .with_context(|| "Network scan failed")?;
                 if include_sensitive_evidence {
                     warn_sensitive_evidence_output();
                 }
